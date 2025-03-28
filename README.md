@@ -60,7 +60,7 @@ jobs:
 - `*-{lang}.{ext}`: about-fa.md
 - `translated_*.{ext}`: translated_about.json
 
-## 🔑 Setting Up OpenAI API Key
+## 🔑 Setting Up the API Key
 - Go to **Settings** → **Secrets and Variables** → **Actions** in your repository.
 - Click **New Repository Secret**.
 - Add a secret named `API_KEY` and paste your AI service API key.

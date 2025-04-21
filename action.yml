@@ -33,6 +33,14 @@ inputs:
     description: "Pattern for translated filenames. Use {lang} for language and {ext} for extension (e.g., *-{lang}.{ext}, translated_*.{ext})"
     required: false
     default: "*-{lang}.{ext}"
+  user_prompt:
+    description: "Customized user-prompt to send to AI model."
+    required: false
+    default: "Translate this text to {TARGET_LANG} while keeping YAML keys, Any html or json markups unchanged:\n{text}"
+  system_prompt:
+    description: "Customized system-prompt to send to AI model."
+    required: false
+    default: "You are a translator specializing in software development. Preserve YAML metadata, HTML, and other markuo formats or codes. and also technical terms in general software development DO NOT translate them to target language. Translate the text to {TARGET_LANG}."
 
 runs:
   using: "docker"

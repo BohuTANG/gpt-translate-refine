@@ -11,13 +11,14 @@ TARGET_LANG = os.getenv('TARGET_LANG', 'Persian') # Default: Persian
 TARGET_LANG_CODE = os.getenv('TARGET_LANG_CODE', 'fa') # Default: fa
 FILE_EXTS = os.getenv('FILE_EXTS','md') # Default: Markdown files
 OUTPUT_FORMAT = os.getenv('OUTPUT_FORMAT', '*-{lang}.{ext}') # Default: *-fa.md
+
 SYSTEM_PROMPT = os.getenv(
     'SYSTEM_PROMPT', 
     'You are a translator specializing in software development. Preserve YAML metadata, HTML, and other markuo formats or codes. and also technical terms in general software development DO NOT translate them to target language. Translate the text to {TARGET_LANG}.'
 )
 USER_PROMPT = os.getenv(
     'USER_PROMPT', 
-    'Translate this text to {TARGET_LANG} while keeping YAML keys, Any html markups unchanged:\n{text}'
+    'Translate this text to {TARGET_LANG} while keeping YAML keys, Any html or json markups unchanged:\n{text}'
 )
 AI_SERVICE = os.getenv('AI_SERVICE', 'openai')
 AI_MODEL = os.getenv('MODEL', 'gpt-4')

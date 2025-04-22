@@ -41,6 +41,9 @@ inputs:
     description: "Customized system-prompt to send to AI model."
     required: false
     default: "You are a translator specializing in software development. Preserve YAML metadata, HTML, and other markuo formats or codes. and also technical terms in general software development DO NOT translate them to target language. Translate the text to {TARGET_LANG}."
+  base_branch:
+    description: "The base branch to diff against (if not automatically detected)"
+    required: false
 
 runs:
   using: "docker"

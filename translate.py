@@ -64,14 +64,36 @@ def translate_text(text):
 
 
 def get_changed_files():
-    changed_files = []
-    for ext in FILE_EXTS:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD~1", "--", f"*.{ext.strip()}"],
-            capture_output=True,
-            text=True,
-        )
-        changed_files.extend([file.strip() for file in result.stdout.split("\n") if file.strip()])
+    file_exts = [ext.strip() for ext in FILE_EXTS.split(",")]
+
+    base_branch = os.getenv("GITHUB_BASE_REF") or os.getenv("BASE_BRANCH") or "main"
+
+    # Fetch base branch
+    subprocess.run(["git", "fetch", "origin", base_branch, "--depth=2"], check=True)
+
+    base_result = subprocess.run(
+        ["git", "merge-base", "HEAD", f"origin/{base_branch}"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    base_commit = base_result.stdout.strip()
+
+    if not base_commit:
+        raise RuntimeError("Could not determine base commit for diff.")
+    
+    diff_result = subprocess.run(
+        ["git", "diff", "--name-only", base_commit, "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    all_changed = diff_result.stdout.splitlines()
+
+    changed_files = [
+        f for f in all_changed if any(f.endswith(f".{ext}") for ext in file_exts)
+    ]
+
     return changed_files
 
 

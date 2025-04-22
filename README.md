@@ -46,6 +46,7 @@ jobs:
           target_lang_code: "fr"
           file_extensions: "md,json,txt"
           output_format: "translated_*.{ext}"
+          base_branch: main # Default is GITHUB_BASE_REF from env
 ```
 ## ⚙️ Inputs
 - `api_key` (Required): Your AI provider API key (stored as a GitHub Secret).
@@ -55,6 +56,7 @@ jobs:
 - `target_lang_code`: The language code to be used in output format (default: **fa**).
 - `file_exts`: Comma-separated list of file types to process (default: **md**).
 - `output_format`: Format for translated files. Use {lang} for language and {ext} for extension.
+- `base_branch`: The base branch to diff against (if not automatically detected). Default is `GITHUB_BASE_REF` from env.
 
 ## 🎯 Example Output Filenames
 - `*-{lang}.{ext}`: about-fa.md

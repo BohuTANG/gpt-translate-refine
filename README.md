@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Run Translation Action
-        uses: imaun/gpt-translate-action@v1.4
+        uses: imaun/gpt-translate-action@v1.7.1
         with:
           api_key: ${{ secrets.API_KEY }}
           ai_service: "openai"  # Options: openai, gemini, claude, azure

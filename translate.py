@@ -1,6 +1,6 @@
 import os
 import yaml
-import openai
+from openai import OpenAI
 import subprocess
 import re
 import requests
@@ -10,8 +10,6 @@ API_KEY = os.getenv('API_KEY')
 if not API_KEY:
     print("API key not found. Please set the API_KEY variable.")
     raise ValueError("API key not found.")
-
-openai.api_key = API_KEY
 
 TARGET_LANG = os.getenv('TARGET_LANG', 'Persian') # Default: Persian
 print('* Target Language:', TARGET_LANG)
@@ -144,14 +142,16 @@ def get_translated_filename(file_path):
 
 def translate_with_openai(system_prompt, user_prompt):
     """Translation using OpenAI """
-    response = openai.ChatCompletion.create(
+    openai_client = OpenAI(API_KEY=API_KEY)
+
+    response = openai_client.chat.completions.create(
         model=AI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
     )
-    return response["choices"][0]["message"]["content"].strip()
+    return response.choices[0].message.content.strip()
 
 
 def translate_with_gemini(system_prompt, user_prompt):

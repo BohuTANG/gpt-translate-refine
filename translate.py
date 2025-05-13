@@ -66,7 +66,7 @@ def translate_text(text):
 def get_changed_files():
     file_exts = [ext.strip() for ext in FILE_EXTS.split(",")]
 
-    base_branch = os.getenv("GITHUB_BASE_REF") or os.getenv("INPUT_BASE_BRANCH") or "main"
+    base_branch = os.getenv("BASE_BRANCH") or os.getenv("GITHUB_BASE_REF") or "main"
 
     # Fetch base branch
     subprocess.run(["git", "fetch", "origin", base_branch, "--depth=2"], check=True)

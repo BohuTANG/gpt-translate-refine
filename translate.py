@@ -82,7 +82,9 @@ def translate_text(text):
 
 def get_changed_files():
     file_exts = [ext.strip() for ext in FILE_EXTS.split(",")]
-    
+
+    # Add Safe Directory Config Early
+    subprocess.run(["git", "config", "--global", "--add", "safe.directory", "/github/workspace"], check=True)
     # Fetch base branch
     subprocess.run(["git", "fetch", "origin", BASE_BRANCH, "--depth=2"], check=True)
 

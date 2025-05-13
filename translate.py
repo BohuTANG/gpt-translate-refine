@@ -86,25 +86,44 @@ def get_changed_files():
     # Add Safe Directory Config Early
     subprocess.run(["git", "config", "--global", "--add", "safe.directory", "/github/workspace"], check=True)
     # Fetch base branch
-    subprocess.run(["git", "fetch", "origin", BASE_BRANCH, "--depth=2"], check=True)
+    # subprocess.run(["git", "fetch", "origin", BASE_BRANCH, "--depth=2"], check=True)
 
-    base_result = subprocess.run(
-        ["git", "merge-base", "HEAD", f"origin/{BASE_BRANCH}"],
-        capture_output=True,
-        text=True,
-        check=True
-    )
-    base_commit = base_result.stdout.strip()
+    # base_result = subprocess.run(
+    #     ["git", "merge-base", "HEAD", f"origin/{BASE_BRANCH}"],
+    #     capture_output=True,
+    #     text=True,
+    #     check=True
+    # )
+    # base_commit = base_result.stdout.strip()
 
-    if not base_commit:
-        raise RuntimeError("Could not determine base commit for diff.")
+    # if not base_commit:
+    #     raise RuntimeError("Could not determine base commit for diff.")
     
+    # diff_result = subprocess.run(
+    #     ["git", "diff", "--name-only", base_commit, "HEAD"],
+    #     capture_output=True,
+    #     text=True,
+    #     check=True
+    # )
+
+    before_sha = os.getenv("GITHUB_EVENT_BEFORE")
+    print('* Before SHA:', before_sha)
+
+    after_sha = os.getenv("GITHUB_SHA")
+    print('* After SHA:', after_sha)
+
+    if not before_sha or not after_sha:
+        print("Missing GITHUB_EVENT_BEFORE or GITHUB_SHA; falling back to HEAD~1")
+        before_sha = "HEAD~1"
+        after_sha = "HEAD"
+
     diff_result = subprocess.run(
-        ["git", "diff", "--name-only", base_commit, "HEAD"],
+        ["git", "diff", "--name-only", before_sha, after_sha],
         capture_output=True,
         text=True,
         check=True
     )
+
     all_changed = diff_result.stdout.splitlines()
 
     changed_files = [

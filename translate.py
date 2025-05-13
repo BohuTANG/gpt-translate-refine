@@ -6,20 +6,20 @@ import re
 import requests
 from glob import glob
 
-API_KEY = os.getenv('INPUT_API_KEY')
+API_KEY = os.getenv('API_KEY')
 if not API_KEY:
     print("API key not found. Please set the API_KEY variable.")
-    exit(1)
+    raise ValueError("API key not found.")
 
 openai.api_key = API_KEY
 
-TARGET_LANG = os.getenv('INPUT_TARGET_LANG', 'Persian') # Default: Persian
+TARGET_LANG = os.getenv('TARGET_LANG', 'Persian') # Default: Persian
 print('* Target Language:', TARGET_LANG)
 
-TARGET_LANG_CODE = os.getenv('INPUT_TARGET_LANG_CODE', 'fa') # Default: fa
+TARGET_LANG_CODE = os.getenv('TARGET_LANG_CODE', 'fa') # Default: fa
 print('* Target Language Code:', TARGET_LANG_CODE)
 
-FILE_EXTS = os.getenv('INPUT_FILE_EXTS','md') # Default: Markdown files
+FILE_EXTS = os.getenv('FILE_EXTS','md') # Default: Markdown files
 print('* File Extensions:', FILE_EXTS)
 
 OUTPUT_FORMAT = os.getenv('OUTPUT_FORMAT', '*-{lang}.{ext}') # Default: *-fa.md
@@ -43,6 +43,8 @@ print('* AI Service:', AI_SERVICE)
 AI_MODEL = os.getenv('MODEL', 'gpt-4')
 print('* AI Model:', AI_MODEL)
 
+BASE_BRANCH = os.getenv('BASE_BRANCH', os.getenv("GITHUB_BASE_REF"))
+print('* Base Branch:', BASE_BRANCH)
 
 def extract_yaml_and_content(md_text):
     match = re.match(r"^---\n(.*?)\n---\n(.*)", md_text, re.DOTALL)
@@ -80,14 +82,12 @@ def translate_text(text):
 
 def get_changed_files():
     file_exts = [ext.strip() for ext in FILE_EXTS.split(",")]
-
-    base_branch = os.getenv("BASE_BRANCH") or os.getenv("GITHUB_BASE_REF") or "main"
-
+    
     # Fetch base branch
-    subprocess.run(["git", "fetch", "origin", base_branch, "--depth=2"], check=True)
+    subprocess.run(["git", "fetch", "origin", BASE_BRANCH, "--depth=2"], check=True)
 
     base_result = subprocess.run(
-        ["git", "merge-base", "HEAD", f"origin/{base_branch}"],
+        ["git", "merge-base", "HEAD", f"origin/{BASE_BRANCH}"],
         capture_output=True,
         text=True,
         check=True

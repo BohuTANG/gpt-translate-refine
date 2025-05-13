@@ -56,3 +56,4 @@ runs:
     TARGET_LANG_CODE: ${{ inputs.target_lang_code }}
     FILE_EXTS: ${{ inputs.file_exts }}
     OUTPUT_FORMAT: ${{ inputs.output_format }}
+    BASE_BRANCH: ${{ inputs.base_branch }}

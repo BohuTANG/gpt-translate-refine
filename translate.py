@@ -142,7 +142,7 @@ def get_translated_filename(file_path):
 
 def translate_with_openai(system_prompt, user_prompt):
     """Translation using OpenAI """
-    openai_client = OpenAI(API_KEY=API_KEY)
+    openai_client = OpenAI(api_key=API_KEY)
 
     response = openai_client.chat.completions.create(
         model=AI_MODEL,

@@ -49,8 +49,8 @@ print('* Base Branch:', BASE_BRANCH)
 def extract_yaml_and_content(md_text):
     match = re.match(r"^---\n(.*?)\n---\n(.*)", md_text, re.DOTALL)
     if match:
-        yaml_part, content = match.group()
-        yaml_data = yaml.safe_load(yaml_part)
+        yaml_part, content = match.groups()
+        yaml_data = yaml.safe_load(yaml_part.strip())
         return yaml_data, content.strip()
     return None, md_text.strip()
 
@@ -105,6 +105,8 @@ def get_changed_files():
     #     text=True,
     #     check=True
     # )
+
+    print("* GitHub Event Name:", os.getenv("GITHUB_EVENT_NAME"))
 
     before_sha = os.getenv("GITHUB_EVENT_BEFORE")
     print('* Before SHA:', before_sha)

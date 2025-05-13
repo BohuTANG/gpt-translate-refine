@@ -6,27 +6,42 @@ import re
 import requests
 from glob import glob
 
-API_KEY = os.getenv('API_KEY')
-TARGET_LANG = os.getenv('TARGET_LANG', 'Persian') # Default: Persian
-TARGET_LANG_CODE = os.getenv('TARGET_LANG_CODE', 'fa') # Default: fa
-FILE_EXTS = os.getenv('FILE_EXTS','md') # Default: Markdown files
+API_KEY = os.getenv('INPUT_API_KEY')
+if not API_KEY:
+    print("API key not found. Please set the API_KEY variable.")
+    exit(1)
+
+openai.api_key = API_KEY
+
+TARGET_LANG = os.getenv('INPUT_TARGET_LANG', 'Persian') # Default: Persian
+print('* Target Language:', TARGET_LANG)
+
+TARGET_LANG_CODE = os.getenv('INPUT_TARGET_LANG_CODE', 'fa') # Default: fa
+print('* Target Language Code:', TARGET_LANG_CODE)
+
+FILE_EXTS = os.getenv('INPUT_FILE_EXTS','md') # Default: Markdown files
+print('* File Extensions:', FILE_EXTS)
+
 OUTPUT_FORMAT = os.getenv('OUTPUT_FORMAT', '*-{lang}.{ext}') # Default: *-fa.md
+print('* Output Format:', OUTPUT_FORMAT)
 
 SYSTEM_PROMPT = os.getenv(
     'SYSTEM_PROMPT', 
     'You are a translator specializing in software development. Preserve YAML metadata, HTML, and other markuo formats or codes. and also technical terms in general software development DO NOT translate them to target language. Translate the text to {TARGET_LANG}.'
 )
+print('* System Prompt:', SYSTEM_PROMPT)
+
 USER_PROMPT = os.getenv(
     'USER_PROMPT', 
     'Translate this text to {TARGET_LANG} while keeping YAML keys, Any html or json markups unchanged:\n{text}'
 )
+print('* User Prompt:', USER_PROMPT)
+
 AI_SERVICE = os.getenv('AI_SERVICE', 'openai')
+print('* AI Service:', AI_SERVICE)
+
 AI_MODEL = os.getenv('MODEL', 'gpt-4')
-
-if not API_KEY:
-    raise ValueError('Missing OpenAI API key!')
-
-openai.api_key = API_KEY
+print('* AI Model:', AI_MODEL)
 
 
 def extract_yaml_and_content(md_text):

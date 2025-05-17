@@ -109,22 +109,23 @@ def get_changed_files():
 
     for f in all_changed:
         if any(f.endswith(f".{ext}") for ext in file_exts):
-            base_name = os.path.basename(f)
-            if not any(base_name.endswith(suffix) for suffix in lang_code_suffixes):
+            if not is_translated_file(f):
                 changed_files.append(f)
 
     return changed_files
 
 
 def get_translated_filename(file_path):
-    lang_code = f'-{TARGET_LANG_CODE.lower()}'
+    lang_code = TARGET_LANG_CODE.lower()
     ext = file_path.split(".")[-1]
     base_name = ".".join(file_path.split(".")[:-1])  # Remove extension
-
-    if base_name.endswith("-" + lang_code):
-        return f'{base_name}'
     
     return OUTPUT_FORMAT.replace("{lang}", lang_code).replace("{ext}", ext).replace("*", base_name)
+
+
+def is_translated_file(file_path):
+    expected_translated = get_translated_filename(file_path)
+    return os.path.basename(file_path) == os.path.basename(expected_translated)
 
 
 def translate_with_openai(system_prompt, user_prompt):

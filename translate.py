@@ -83,26 +83,6 @@ def get_changed_files():
 
     # Add Safe Directory Config Early
     subprocess.run(["git", "config", "--global", "--add", "safe.directory", "/github/workspace"], check=True)
-    # Fetch base branch
-    # subprocess.run(["git", "fetch", "origin", BASE_BRANCH, "--depth=2"], check=True)
-
-    # base_result = subprocess.run(
-    #     ["git", "merge-base", "HEAD", f"origin/{BASE_BRANCH}"],
-    #     capture_output=True,
-    #     text=True,
-    #     check=True
-    # )
-    # base_commit = base_result.stdout.strip()
-
-    # if not base_commit:
-    #     raise RuntimeError("Could not determine base commit for diff.")
-    
-    # diff_result = subprocess.run(
-    #     ["git", "diff", "--name-only", base_commit, "HEAD"],
-    #     capture_output=True,
-    #     text=True,
-    #     check=True
-    # )
 
     print("* GitHub Event Name:", os.getenv("GITHUB_EVENT_NAME"))
 

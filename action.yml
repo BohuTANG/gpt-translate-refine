@@ -10,11 +10,11 @@ inputs:
     description: "AI Service API Key"
     required: true
   ai_service:
-    description: "AI service provider"
+    description: "AI service provider (openai, gemini, claude, azure)"
     required: false
     default: "openai"
   ai_model:
-    description: "AI model"
+    description: "AI model Specify model (e.g., gemini-pro, claude-v1)"
     required: false
     default: "gpt-4"
   target_lang:

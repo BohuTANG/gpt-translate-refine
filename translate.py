@@ -97,7 +97,7 @@ def get_changed_files():
         after_sha = "HEAD"
 
     diff_result = subprocess.run(
-        ["git", "diff", "--name-only", before_sha, after_sha],
+        ["git", "diff", "--diff-filter=AM", "--name-only", before_sha, after_sha],
         capture_output=True,
         text=True,
         check=True
@@ -198,6 +198,10 @@ def main():
 
     for file_path in changed_files:
         print(f"Processing: {file_path}")
+
+        if not os.path.exists(file_path):
+            print(f"File not found, skipping: {file_path}")
+            continue
 
         with open(file_path, "r", encoding="utf-8") as f:
             file_text = f.read()

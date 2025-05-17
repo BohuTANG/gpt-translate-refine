@@ -81,7 +81,6 @@ def translate_text(text):
 def get_changed_files():
     file_exts = [ext.strip() for ext in FILE_EXTS.split(",")]
 
-    # Add Safe Directory Config Early
     subprocess.run(["git", "config", "--global", "--add", "safe.directory", "/github/workspace"], check=True)
 
     print("* GitHub Event Name:", os.getenv("GITHUB_EVENT_NAME"))
@@ -105,18 +104,26 @@ def get_changed_files():
     )
 
     all_changed = diff_result.stdout.splitlines()
+    lang_code_suffixes = [f"-{TARGET_LANG_CODE.lower()}.{ext}" for ext in file_exts]
+    changed_files = []
 
-    changed_files = [
-        f for f in all_changed if any(f.endswith(f".{ext}") for ext in file_exts)
-    ]
+    for f in all_changed:
+        if any(f.endswith(f".{ext}") for ext in file_exts):
+            base_name = os.path.basename(f)
+            if not any(base_name.endswith(suffix) for suffix in lang_code_suffixes):
+                changed_files.append(f)
 
     return changed_files
 
 
 def get_translated_filename(file_path):
+    lang_code = f'-{TARGET_LANG_CODE.lower()}'
     ext = file_path.split(".")[-1]
     base_name = ".".join(file_path.split(".")[:-1])  # Remove extension
-    lang_code = f'-{TARGET_LANG_CODE.lower()}'
+
+    if base_name.endswith("-" + lang_code):
+        return f'{base_name}'
+    
     return OUTPUT_FORMAT.replace("{lang}", lang_code).replace("{ext}", ext).replace("*", base_name)
 
 

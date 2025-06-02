@@ -1,66 +1,82 @@
-# 🚀  Translate Files with Multiple AI APIs (GitHub Action)
+# 🚀  Translate Files with OpenAI (GitHub Action)
 ---
-This GitHub Action detects changes in specified file types (Markdown, JSON, TXT, etc.), translates the modified content using various AI models (OpenAI GPT-4, Google Gemini, Anthropic Claude, Microsoft Azure Translator), and commits the translations back to your repository.
+This GitHub Action detects changes in specified file types (Markdown, JSON, TXT, etc.), translates the modified content using OpenAI models, and commits the translations back to your repository.
 
 - ✅ Supports multiple file extensions
 - ✅ Preserves YAML front matter in markdown files
 - ✅ Allows custom output file formats
 - ✅ Automatically commits and pushes translated files
-- ✅ Supports multiple AI provioders (OpenAI ChatGPT, Google Gemini, Claude, Azure)
+- ✅ Optional two-stage translation with refinement by a second OpenAI model
 
 ---
 ## 🛠 How It Works
 - Detects changed files (based on extensions like .md, .json, .txt).
 - Extracts and preserves YAML front matter (if applicable).
 - Sends content to AI API for translation.
+- Optionally refines the translation using a second AI model for improved quality.
 - Saves the translated version with a custom filename format (e.g., *-fr.md, translated_*.json).
 - Commits and pushes the translated files back to the repository.
 
 ---
-## 📌 Example Usage
-Add the following workflow to your `.github/workflows/translate.yml` file (or add the step in any of your pipelines!):
+## 🚀 Usage
+
+### GitHub Actions Workflow
 
 ```yaml
-name: Translate Files
+name: Translate Documentation
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'docs/en/**'
 
 jobs:
   translate:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-
-      - name: Run Translation Action
-        uses: imaun/gpt-translate-action@v1.9.0
         with:
-          api_key: ${{ secrets.API_KEY }}
-          ai_service: "openai"  # Options: openai, gemini, claude, azure
-          ai_model: "gpt-4"      # Specify model (e.g., gemini-pro, claude-v1)
-          target_lang: "French"
-          target_lang_code: "fr"
-          file_extensions: "md,json,txt"
-          output_format: "translated_*.{ext}"
-          base_branch: main # Default is GITHUB_BASE_REF from env
+          fetch-depth: 0
+          
+      - name: Run Translation Action
+        uses: BohuTANG/gpt-translate-refine@v1.0.0
+        with:
+          api_key: ${{ secrets.OPENAI_API_KEY }}
+          # base_url: "https://api.openrouter.ai/api/v1"  # Optional: custom OpenAI-compatible API endpoint
+          ai_model: "gpt-4"      # OpenAI model to use
+          target_lang: "Chinese"
+          input_files: "README.md docs/getting-started.md"
+          output_files: "docs/cn/**/*.{md}"
+          # Optional refinement settings (enabled by default)
+          refine_ai_model: "gpt-4-turbo"  # Specify a different OpenAI model for refinement
+          # Optional git settings
+          commit_message: "Add LLM Translations"  # Custom commit message title
 ```
-## ⚙️ Inputs
-- `api_key` (Required): Your AI provider API key (stored as a GitHub Secret).
-- `ai_service`: AI provider to use. Currently supported values: (openai, gemini, claude, azure)
-- `ai_model`: AI model to use (e.g., gpt-4, gemini-pro, claude-v1).
-- `target_lang`: The language to translate into (default: **Persian**).
-- `target_lang_code`: The language code to be used in output format (default: **fa**).
-- `file_exts`: Comma-separated list of file types to process (default: **md**).
-- `output_format`: Format for translated files. Use {lang} for language and {ext} for extension.
-- `base_branch`: The base branch to diff against (if not automatically detected). Default is `GITHUB_BASE_REF` from env.
+## 🔧 Parameters
 
-## 🎯 Example Output Filenames
-- `*-{lang}.{ext}`: about-fa.md
-- `translated_*.{ext}`: translated_about.json
+### Required Parameters
+- `api_key`: OpenAI API key.
+- `input_files`: Space-separated list of files to translate (e.g., "README.md docs/guide.md").
+- `output_files`: Output file pattern (e.g., 'docs/cn/**/*.{md,json}').
+
+### Optional Parameters
+- `base_url`: Custom OpenAI API endpoint URL (default: **https://openrouter.ai/api/v1**).
+- `ai_model`: OpenAI model to use (default: **gpt-4**).
+- `target_lang`: Target language for translation (default: **Simplified-Chinese**).
+
+### Prompt Customization
+- `prompt`: Customize the prompt for the AI model. Can be text or a file path.
+
+### Refinement Options
+- `refine_enabled`: Enable second OpenAI model for refinement after translation (default: **true**).
+- `refine_ai_model`: OpenAI model for refinement. If not specified, uses the same as primary translation.
+- `refine_prompt`: Customize the prompt for refinement. Can be text or a file path.
+
+### Git Options
+- `commit_message`: Custom commit message title (default: **Add LLM Translations**).
 
 ## 🔑 Setting Up the API Key
 - Go to **Settings** → **Secrets and Variables** → **Actions** in your repository.
@@ -94,8 +110,42 @@ description: "Ceci est mon site Web personnel."
 Bienvenue sur mon site personnel ! Vous pouvez y trouver mes projets et articles de blog.
 ```
 ---
-## 🛠 Running Locally (For Testing)
+## 🧪 Local Testing
+
 ```bash
+# Basic usage (uses default OpenRouter endpoint and Simplified-Chinese as target language)
 docker build -t translate-action .
-docker run -e API_KEY="your-api-key" -e AI_SERVICE="gemini" -e TARGET_LANG="French" -e TARGET_LANG_CODE="fr" translate-action
+docker run -e API_KEY="your-api-key" -e INPUT_FILES="README.md docs/guide.md" -e OUTPUT_FILES="docs/cn/**/*.{md}" translate-action
+
+# With custom settings
+docker run -e API_KEY="your-api-key" -e BASE_URL="https://api.openai.com/v1" -e TARGET_LANG="French" -e INPUT_FILES="README.md" -e OUTPUT_FILES="docs/fr/README.md" -e REFINE_ENABLED="true" -e REFINE_AI_MODEL="gpt-4-turbo" translate-action
+
+# Using file-based prompts
+docker run -e API_KEY="your-api-key" -e INPUT_FILES="docs/en/guides/00-products/02-dc/05-support.md" -e OUTPUT_FILES="docs/cn/**/*.{md,json}" -e AI_MODEL="gpt-4" -e PROMPT=".github/workflows/prompt.txt" -e REFINE_AI_MODEL="gpt-4-turbo" -e REFINE_PROMPT=".github/workflows/prompt_refine.txt" translate-action
+```
+
+### Managing Docker Images
+
+To check existing Docker images:
+```bash
+docker images | grep translate-action
+```
+
+To remove the Docker image (useful when making changes and need to rebuild):
+```bash
+docker rmi translate-action
+```
+
+### Working with Files in Different Directories
+
+If your files to translate are in a different directory than where you're running the action, you have two options:
+
+#### Option 1: Change to the correct directory first
+```bash
+cd /path/to/your/docs/repo && docker run -e API_KEY="your-api-key" -e INPUT_FILES="docs/en/file.md" -e OUTPUT_FILES="docs/cn/**/*.md" translate-action
+```
+
+#### Option 2: Mount the directory as a volume
+```bash
+docker run -v /path/to/your/docs/repo:/workspace -w /workspace -e API_KEY="your-api-key" -e INPUT_FILES="docs/en/file.md" -e OUTPUT_FILES="docs/cn/**/*.md" translate-action
 ```

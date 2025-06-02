@@ -1,5 +1,5 @@
 name: "GPT Translate Action - Translate any files with OpenAI ChatGPT"
-description: "Detects changes in specified file types, translates them using OpenAI API, and commits the translations."
+description: "Detects changes in specified file types, translates them using OpenAI API with optional refinement, and commits the translations."
 author: "Iman Nemati"
 branding:
   icon: "book-open"
@@ -7,53 +7,63 @@ branding:
 
 inputs:
   api_key:
-    description: "AI Service API Key"
+    description: "OpenAI API Key"
     required: true
-  ai_service:
-    description: "AI service provider (openai, gemini, claude, azure)"
+  base_url:
+    description: "Custom OpenAI API endpoint URL"
     required: false
-    default: "openai"
+    default: "https://openrouter.ai/api/v1"
   ai_model:
-    description: "AI model Specify model (e.g., gemini-pro, claude-v1)"
+    description: "OpenAI model to use (e.g., gpt-4, gpt-3.5-turbo)"
     required: false
     default: "gpt-4"
   target_lang:
-    description: "Target language for translation (e.g., Persian, Spanish, German, French)"
+    description: "Target language (e.g., French, Spanish, German)"
     required: false
-    default: "Persian"
-  target_lang_code:
-    description: "Target language code. (e.g: fa for Persian, or ru for Russian)"
+    default: "Simplified-Chinese"
+  input_files:
+    description: "Explicit list of input files to translate (space-separated)"
+    required: true
+  output_files:
+    description: "Output file pattern (e.g., 'docs/cn/**/*.{md,json}')"
+    required: true
+
+  prompt:
+    description: "Customized prompt to send to AI model. Can be text or a file path."
     required: false
-    default: "fa"
-  file_exts:
-    description: "Comma-separated list of file extensions to translate (e.g., md,json,txt)"
+
+  refine_enabled:
+    description: "Enable second AI model for refinement after translation"
     required: false
-    default: "md"
-  output_format:
-    description: "Pattern for translated filenames. Use {lang} for language and {ext} for extension (e.g., *-{lang}.{ext}, translated_*.{ext})"
+    default: "true"
+  refine_ai_model:
+    description: "AI model for refinement (uses the same service as primary translation but with a different model)"
     required: false
-    default: "*-{lang}.{ext}"
-  user_prompt:
-    description: "Customized user-prompt to send to AI model."
+
+  refine_prompt:
+    description: "Prompt for refinement AI model. Can be text or a file path."
     required: false
-    default: "Translate this text to {TARGET_LANG} while keeping YAML keys, Any html or json markups unchanged:\n{text}"
-  system_prompt:
-    description: "Customized system-prompt to send to AI model."
-    required: false
-    default: "You are a translator specializing in software development. Preserve YAML metadata, HTML, and other markuo formats or codes. and also technical terms in general software development DO NOT translate them to target language. Translate the text to {TARGET_LANG}."
   base_branch:
     description: "The base branch to diff against (if not automatically detected)"
     required: false
+  commit_message:
+    description: "Custom commit message title (default: 'Add LLM Translations')"
+    required: false
+    default: "Add LLM Translations"
 
 runs:
   using: "docker"
   image: "Dockerfile"
   env:
     API_KEY: ${{ inputs.api_key }}
-    AI_SERVICE: ${{ inputs.ai_service }}
+    BASE_URL: ${{ inputs.base_url }}
     AI_MODEL: ${{ inputs.ai_model }}
     TARGET_LANG: ${{ inputs.target_lang }}
-    TARGET_LANG_CODE: ${{ inputs.target_lang_code }}
-    FILE_EXTS: ${{ inputs.file_exts }}
-    OUTPUT_FORMAT: ${{ inputs.output_format }}
+    INPUT_FILES: ${{ inputs.input_files }}
+    OUTPUT_FILES: ${{ inputs.output_files }}
+    REFINE_ENABLED: ${{ inputs.refine_enabled }}
+    REFINE_AI_MODEL: ${{ inputs.refine_ai_model }}
+    REFINE_SYSTEM_PROMPT: ${{ inputs.refine_system_prompt }}
+    REFINE_USER_PROMPT: ${{ inputs.refine_user_prompt }}
     BASE_BRANCH: ${{ inputs.base_branch }}
+    COMMIT_MESSAGE: ${{ inputs.commit_message }}

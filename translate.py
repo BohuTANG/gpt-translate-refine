@@ -6,6 +6,9 @@ import re
 from glob import glob
 import sys
 import difflib
+import json
+import uuid
+import requests
 
 # OpenAI API settings
 API_KEY = os.getenv('API_KEY')
@@ -201,6 +204,101 @@ def show_diff(text1, text2):
     else:
         print("No differences found between original and refined translations.")
 
+def create_pull_request(github_token, github_repository, branch_name, commit_message, translation_table):
+    """Create a pull request using GitHub API or GitHub CLI
+    
+    Args:
+        github_token: GitHub token for authentication
+        github_repository: Repository in format 'owner/repo'
+        branch_name: Branch name to create PR from
+        commit_message: Commit message (will be used for PR title/body)
+        translation_table: Table of translated files for PR body
+    """
+    try:
+        # Extract PR title from commit message (first line)
+        pr_title = "🌐 Add LLM Translations"
+        
+        # Create PR body with translation table
+        pr_body = f"## Automated Translation\n\n{commit_message.split('\n\n', 1)[1] if '\n\n' in commit_message else commit_message}"
+        
+        # Check if we're in GitHub Actions environment
+        in_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
+        
+        # If we're in GitHub Actions and token is auto-generated, use GitHub CLI
+        if in_github_actions and github_token == 'auto-generated-token':
+            print("Creating PR using GitHub CLI (gh)...")
+            try:
+                # Try to use GitHub CLI which has automatic authentication in Actions
+                # First, create a temporary file with the PR body
+                pr_body_file = "pr_body.md"
+                with open(pr_body_file, "w") as f:
+                    f.write(pr_body)
+                
+                # Create PR using gh cli
+                result = subprocess.run(
+                    ["gh", "pr", "create", 
+                     "--title", pr_title,
+                     "--body-file", pr_body_file,
+                     "--head", branch_name],
+                    capture_output=True,
+                    text=True
+                )
+                
+                # Clean up the temporary file
+                if os.path.exists(pr_body_file):
+                    os.remove(pr_body_file)
+                    
+                if result.returncode == 0:
+                    print(f"Successfully created PR: {result.stdout.strip()}")
+                    return
+                else:
+                    print(f"Failed to create PR using GitHub CLI: {result.stderr}")
+                    print("Falling back to GitHub API...")
+            except Exception as cli_error:
+                print(f"Error using GitHub CLI: {str(cli_error)}")
+                print("Falling back to GitHub API...")
+        
+        # Use GitHub API as fallback or primary method
+        # GitHub API endpoint for creating PRs
+        api_url = f"https://api.github.com/repos/{github_repository}/pulls"
+        
+        # Default branch is usually 'main' or 'master'
+        # Get the default branch using GitHub API
+        repo_url = f"https://api.github.com/repos/{github_repository}"
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # Get repository info to determine default branch
+        repo_response = requests.get(repo_url, headers=headers)
+        if repo_response.status_code != 200:
+            print(f"Failed to get repository info: {repo_response.status_code}")
+            print(repo_response.json())
+            return
+            
+        default_branch = repo_response.json()["default_branch"]
+        
+        # Create the pull request
+        pr_data = {
+            "title": pr_title,
+            "body": pr_body,
+            "head": branch_name,
+            "base": default_branch
+        }
+        
+        response = requests.post(api_url, headers=headers, json=pr_data)
+        
+        if response.status_code == 201:
+            pr_number = response.json()["number"]
+            pr_url = response.json()["html_url"]
+            print(f"Successfully created PR #{pr_number}: {pr_url}")
+        else:
+            print(f"Failed to create PR: {response.status_code}")
+            print(response.json())
+    except Exception as e:
+        print(f"Error creating pull request: {str(e)}")
+
 def find_files_in_directory(directory_path, extensions=None):
     """Recursively find all files in a directory, optionally filtering by extensions
     
@@ -370,12 +468,66 @@ def main():
     table_content = "\n".join(translation_table)
     commit_message = f"{COMMIT_MESSAGE}\n\n## ✅ Translated to {TARGET_LANG} - {len(input_files)} file{'s' if len(input_files) > 1 else ''}\n\n| **Source** | **Output** | **Language** |\n| :--- | :--- | :--- |\n{table_content}"
     
-    # Git commit and push
-    subprocess.run(["git", "config", "--global", "user.name", "github-actions[bot]"])
-    subprocess.run(["git", "config", "--global", "user.email", "github-actions[bot]@users.noreply.github.com"])
-    subprocess.run(["git", "add", "*"])
-    subprocess.run(["git", "commit", "-m", commit_message])
-    subprocess.run(["git", "push"])
+    # Get GitHub environment variables
+    # In GitHub Actions, we can access the token through the GITHUB_TOKEN environment variable
+    # or through the GitHub Actions environment file
+    github_token = os.getenv('GITHUB_TOKEN')
+    
+    # Try to get token from GitHub Actions environment file
+    github_env_file = os.getenv('GITHUB_ENV')
+    if not github_token and github_env_file and os.path.exists(github_env_file):
+        try:
+            with open(github_env_file, 'r') as f:
+                for line in f:
+                    if line.startswith('GITHUB_TOKEN='):
+                        github_token = line.split('=', 1)[1].strip()
+                        break
+        except Exception as e:
+            print(f"Warning: Could not read GitHub environment file: {e}")
+    
+    # If still no token, try to use the default GitHub Actions token path
+    if not github_token and os.getenv('GITHUB_ACTIONS') == 'true':
+        # In GitHub Actions, the token is automatically available
+        # We'll use it without requiring explicit configuration
+        github_token = 'auto-generated-token'
+        print("Using auto-generated GitHub token from Actions environment")
+    
+    github_repository = os.getenv('GITHUB_REPOSITORY')
+    github_ref = os.getenv('GITHUB_REF')
+    github_actor = os.getenv('GITHUB_ACTOR')
+    github_run_id = os.getenv('GITHUB_RUN_ID')
+    
+    # If we're running in GitHub Actions
+    if (github_token or os.getenv('GITHUB_ACTIONS') == 'true') and github_repository:
+        print("Running in GitHub Actions environment, setting up git...")
+        
+        # Set git config
+        subprocess.run(["git", "config", "user.name", "github-actions[bot]"])
+        subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"])
+        
+        # Create a new branch for the PR
+        branch_name = f"translate-{github_run_id if github_run_id else str(uuid.uuid4())[:8]}"
+        print(f"Creating branch: {branch_name}")
+        subprocess.run(["git", "checkout", "-b", branch_name])
+        
+        # Add and commit changes
+        subprocess.run(["git", "add", "*"])
+        subprocess.run(["git", "commit", "-m", commit_message])
+        
+        # Push to the new branch
+        print(f"Pushing to branch: {branch_name}")
+        subprocess.run(["git", "push", "origin", branch_name])
+        
+        # Create PR using GitHub API
+        create_pull_request(github_token, github_repository, branch_name, commit_message, translation_table)
+    else:
+        # Regular git operations for local runs
+        print("Running in local environment, performing standard git operations...")
+        subprocess.run(["git", "config", "--global", "user.name", "github-actions[bot]"])
+        subprocess.run(["git", "config", "--global", "user.email", "github-actions[bot]@users.noreply.github.com"])
+        subprocess.run(["git", "add", "*"])
+        subprocess.run(["git", "commit", "-m", commit_message])
+        subprocess.run(["git", "push"])
 
 if __name__ == "__main__":
     main()

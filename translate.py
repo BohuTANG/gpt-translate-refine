@@ -224,8 +224,8 @@ def create_pull_request(github_token, github_repository, branch_name, commit_mes
         # Check if we're in GitHub Actions environment
         in_github_actions = os.getenv('GITHUB_ACTIONS') == 'true'
         
-        # If we're in GitHub Actions and token is auto-generated, use GitHub CLI
-        if in_github_actions and github_token == 'auto-generated-token':
+        # If we're in GitHub Actions, try to use GitHub CLI first
+        if in_github_actions:
             print("Creating PR using GitHub CLI (gh)...")
             try:
                 # Try to use GitHub CLI which has automatic authentication in Actions
@@ -469,9 +469,18 @@ def main():
     commit_message = f"{COMMIT_MESSAGE}\n\n## ✅ Translated to {TARGET_LANG} - {len(input_files)} file{'s' if len(input_files) > 1 else ''}\n\n| **Source** | **Output** | **Language** |\n| :--- | :--- | :--- |\n{table_content}"
     
     # Get GitHub environment variables
-    # In GitHub Actions, we can access the token through the GITHUB_TOKEN environment variable
-    # or through the GitHub Actions environment file
-    github_token = os.getenv('GITHUB_TOKEN')
+    # In GitHub Actions, we can access the token through various environment variables
+    github_token = os.getenv('GITHUB_TOKEN') or os.getenv('INPUT_GITHUB_TOKEN')
+    
+    # Check for token in standard GitHub Actions locations
+    if not github_token:
+        # Try common environment variable names for GitHub token
+        for env_var in ['GH_TOKEN', 'GITHUB_PAT', 'INPUT_TOKEN']:
+            token = os.getenv(env_var)
+            if token:
+                github_token = token
+                print(f"Using GitHub token from {env_var}")
+                break
     
     # Try to get token from GitHub Actions environment file
     github_env_file = os.getenv('GITHUB_ENV')
@@ -479,18 +488,19 @@ def main():
         try:
             with open(github_env_file, 'r') as f:
                 for line in f:
-                    if line.startswith('GITHUB_TOKEN='):
+                    if line.startswith('GITHUB_TOKEN=') or line.startswith('GH_TOKEN='):
                         github_token = line.split('=', 1)[1].strip()
+                        print(f"Using GitHub token from environment file")
                         break
         except Exception as e:
             print(f"Warning: Could not read GitHub environment file: {e}")
     
-    # If still no token, try to use the default GitHub Actions token path
+    # If still no token and we're in GitHub Actions, use the default token
     if not github_token and os.getenv('GITHUB_ACTIONS') == 'true':
-        # In GitHub Actions, the token is automatically available
-        # We'll use it without requiring explicit configuration
-        github_token = 'auto-generated-token'
+        # In GitHub Actions, we need to get the token from the GITHUB_TOKEN secret
         print("Using auto-generated GitHub token from Actions environment")
+        # This is just a placeholder - in GitHub Actions, the token should be passed as an input
+        github_token = os.getenv('GITHUB_TOKEN', '')
     
     github_repository = os.getenv('GITHUB_REPOSITORY')
     github_ref = os.getenv('GITHUB_REF')

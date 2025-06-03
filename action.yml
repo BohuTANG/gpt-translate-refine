@@ -43,6 +43,14 @@ inputs:
   refine_prompt:
     description: "Prompt for refinement AI model. Can be text or a file path."
     required: false
+  temperature:
+    description: "Temperature setting for controlling randomness (0.0 to 1.0)"
+    required: false
+    default: "0.3"
+  refine_temperature:
+    description: "Temperature setting for refinement model (0.0 to 1.0)"
+    required: false
+    default: "0.3"
   base_branch:
     description: "The base branch to diff against (if not automatically detected)"
     required: false
@@ -61,9 +69,11 @@ runs:
     TARGET_LANG: ${{ inputs.target_lang }}
     INPUT_FILES: ${{ inputs.input_files }}
     OUTPUT_FILES: ${{ inputs.output_files }}
+    PROMPT: ${{ inputs.prompt }}
     REFINE_ENABLED: ${{ inputs.refine_enabled }}
     REFINE_AI_MODEL: ${{ inputs.refine_ai_model }}
-    REFINE_SYSTEM_PROMPT: ${{ inputs.refine_system_prompt }}
-    REFINE_USER_PROMPT: ${{ inputs.refine_user_prompt }}
+    REFINE_PROMPT: ${{ inputs.refine_prompt }}
+    TEMPERATURE: ${{ inputs.temperature }}
+    REFINE_TEMPERATURE: ${{ inputs.refine_temperature }}
     BASE_BRANCH: ${{ inputs.base_branch }}
     COMMIT_MESSAGE: ${{ inputs.commit_message }}

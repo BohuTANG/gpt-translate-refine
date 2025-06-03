@@ -405,6 +405,12 @@ def main():
         print("No input files specified.")
         return
 
+    # Track all processed files and their output paths
+    all_processed_files = []
+    all_output_files = []
+    # Track directories and their contained files
+    directory_files_map = {}
+
     # Process each input path (could be a file or directory)
     for input_path in input_files:
         print(f"Processing: {input_path}")
@@ -429,6 +435,8 @@ def main():
             doc_extensions = ['.md', '.txt', '.json']
             files_to_process = find_files_in_directory(input_path, doc_extensions)
             print(f"Found {len(files_to_process)} files in directory {input_path}")
+            # Track files in this directory
+            directory_files_map[input_path] = files_to_process
         else:
             # It's a regular file
             files_to_process = [input_path]
@@ -465,14 +473,41 @@ def main():
             with open(translated_file_path, "w", encoding="utf-8") as f:
                 f.write(translated_file_text)
             print(f"Saved translated file: {translated_file_path}")
+            
+            # Add to the list of all processed files
+            all_processed_files.append(file_path)
+            all_output_files.append(translated_file_path)
 
     # Prepare commit message with table of translated files
     translation_table = []
-    for source_file, output_file in zip(input_files, [get_output_path(f) for f in input_files]):
+    
+    # If there are directories in the input, show directory information
+    has_directories = any(os.path.isdir(path) for path in input_files if os.path.exists(path))
+    
+    if has_directories:
+        # First add a summary of directories
+        for input_path in input_files:
+            if os.path.exists(input_path) and os.path.isdir(input_path):
+                dir_files = directory_files_map.get(input_path, [])
+                translation_table.append(f"| 📁 `{input_path}` | {len(dir_files)} files | {TARGET_LANG} |")
+    
+    # Add individual file entries
+    for source_file, output_file in zip(all_processed_files, all_output_files):
         translation_table.append(f"| `{source_file}` | `{output_file}` | {TARGET_LANG} |")
     
     table_content = "\n".join(translation_table)
-    commit_message = f"{COMMIT_MESSAGE}\n\n## ✅ Translated to {TARGET_LANG} - {len(input_files)} file{'s' if len(input_files) > 1 else ''}\n\n| **Source** | **Output** | **Language** |\n| :--- | :--- | :--- |\n{table_content}"
+    
+    # Create the commit message with appropriate count
+    if has_directories:
+        # Count directories and files separately
+        dir_count = sum(1 for path in input_files if os.path.exists(path) and os.path.isdir(path))
+        file_count = len(all_processed_files)
+        summary = f"{dir_count} director{'ies' if dir_count > 1 else 'y'} ({file_count} files)"
+    else:
+        # Just count files
+        summary = f"{len(all_processed_files)} file{'s' if len(all_processed_files) > 1 else ''}"
+
+    commit_message = f"{COMMIT_MESSAGE}\n\n## ✅ Translated to {TARGET_LANG} - {summary}\n\n| **Source** | **Output/Count** | **Language** |\n| :--- | :--- | :--- |\n{table_content}"
     
     # Get GitHub environment variables
     # In GitHub Actions, we can access the token through various environment variables

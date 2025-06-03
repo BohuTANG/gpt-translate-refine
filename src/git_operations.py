@@ -61,6 +61,9 @@ class GitOperations:
             self.run_command(['git', 'config', 'user.name', 'github-actions[bot]'])
             self.run_command(['git', 'config', 'user.email', 'github-actions[bot]@users.noreply.github.com'])
             
+            # Add GitHub workspace as safe directory to fix ownership issues
+            self.run_command(['git', 'config', '--global', '--add', 'safe.directory', '/github/workspace'])
+            
             # Set remote URL with token for authentication
             if self.github_token and self.github_repository:
                 remote_url = f"https://x-access-token:{self.github_token}@github.com/{self.github_repository}.git"

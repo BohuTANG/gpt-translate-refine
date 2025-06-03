@@ -57,17 +57,42 @@ class GitOperations:
             return True
         
         try:
-            # Configure Git user
-            self.run_command(['git', 'config', 'user.name', 'github-actions[bot]'])
-            self.run_command(['git', 'config', 'user.email', 'github-actions[bot]@users.noreply.github.com'])
-            
             # Add GitHub workspace as safe directory to fix ownership issues
-            self.run_command(['git', 'config', '--global', '--add', 'safe.directory', '/github/workspace'])
+            code, _, stderr = self.run_command(['git', 'config', '--global', '--add', 'safe.directory', '/github/workspace'])
+            if code != 0:
+                print(f"Warning: Failed to set safe.directory: {stderr}")
+            
+            # Configure Git user - use global config to ensure it's applied everywhere
+            code, _, stderr = self.run_command(['git', 'config', '--global', 'user.name', 'github-actions[bot]'])
+            if code != 0:
+                print(f"Error setting git user.name: {stderr}")
+                return False
+                
+            code, _, stderr = self.run_command(['git', 'config', '--global', 'user.email', 'github-actions[bot]@users.noreply.github.com'])
+            if code != 0:
+                print(f"Error setting git user.email: {stderr}")
+                return False
+            
+            # Verify the configuration was set correctly
+            code, stdout, _ = self.run_command(['git', 'config', '--get', 'user.name'])
+            if code != 0 or not stdout.strip():
+                print("Warning: Failed to verify git user.name configuration")
+            else:
+                print(f"Git user.name configured as: {stdout.strip()}")
+                
+            code, stdout, _ = self.run_command(['git', 'config', '--get', 'user.email'])
+            if code != 0 or not stdout.strip():
+                print("Warning: Failed to verify git user.email configuration")
+            else:
+                print(f"Git user.email configured as: {stdout.strip()}")
             
             # Set remote URL with token for authentication
             if self.github_token and self.github_repository:
                 remote_url = f"https://x-access-token:{self.github_token}@github.com/{self.github_repository}.git"
-                self.run_command(['git', 'remote', 'set-url', 'origin', remote_url])
+                code, _, stderr = self.run_command(['git', 'remote', 'set-url', 'origin', remote_url])
+                if code != 0:
+                    print(f"Error setting git remote URL: {stderr}")
+                    return False
             
             return True
         except Exception as e:
@@ -76,15 +101,26 @@ class GitOperations:
     
     def commit_and_push(self, output_files: List[str], commit_message: str) -> Optional[str]:
         """Commit changes and push to remote, return branch name if created"""
-        if not output_files:
-            print("No files to commit")
-            return None
-        
         if not self.in_github_actions:
             print("Not running in GitHub Actions, skipping commit and push")
             return None
         
+        # Ensure Git is properly set up before committing
+        if not self.setup_git():
+            print("Failed to set up Git configuration, cannot commit changes")
+            return None
+        
         try:
+            # Check if there are any changes to commit
+            code, stdout, _ = self.run_command(['git', 'status', '--porcelain'])
+            if code != 0:
+                print("Error checking git status")
+                return None
+            
+            if not stdout.strip():
+                print("No changes to commit")
+                return None
+            
             # Create a new branch for the PR
             branch_name = f"translation-{uuid.uuid4().hex[:8]}"
             

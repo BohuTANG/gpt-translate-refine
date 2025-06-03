@@ -176,10 +176,11 @@ class TranslationWorkflow:
             file_count = len(self.processed_files)
             summary = f"{file_count} file{'s' if file_count > 1 else ''}"
 
-        # Format the complete commit message
+        # Get PR title directly from config (no modifications)
         pr_title = self.config.pr_title.strip()
+        
+        # Format the complete commit message (used for commit and PR body)
         commit_message = (
-            f"{pr_title}\n\n"
             f"## ✅ Translated to {self.config.target_lang} - {summary}\n\n"
             f"{''.join(f'{line}\n' for line in translation_table)}"
         )
@@ -199,7 +200,11 @@ class TranslationWorkflow:
         if branch_name:
             if self.git_ops.github_token and self.git_ops.github_repository:
                 print("Creating pull request...")
-                if self.git_ops.create_pull_request(branch_name, commit_message, translation_table):
+                # Use pr_title from config as the PR title
+                pr_title = self.config.pr_title.strip()
+                # Use commit_message as the PR body
+                pr_body = commit_message.split('\n')
+                if self.git_ops.create_pull_request(branch_name, pr_title, pr_body):
                     print("✅ Pull request created successfully")
                 else:
                     print("⚠️ Failed to create pull request")
@@ -229,7 +234,7 @@ class TranslationWorkflow:
             
             print(f"✅ Successfully translated {len(self.processed_files)} files")
             
-            # Prepare commit message
+            # Prepare commit message and PR title
             commit_message, translation_table = self.prepare_commit_message(input_files)
             
             # Handle git operations

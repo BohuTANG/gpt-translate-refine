@@ -12,6 +12,7 @@ RUN curl -sL https://github.com/cli/cli/releases/download/v2.45.0/gh_2.45.0_linu
     rm -rf gh_* gh.tar.gz
 
 COPY translate.py .
+COPY src/ ./src/
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt

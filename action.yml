@@ -62,8 +62,8 @@ inputs:
   base_branch:
     description: "The base branch to diff against (if not automatically detected)"
     required: false
-  commit_message:
-    description: "Custom commit message title (default: 'Add LLM Translations')"
+  pr_title:
+    description: "Custom PR title (default: 'Add LLM Translations')"
     required: false
     default: "Add LLM Translations"
   github_token:
@@ -89,5 +89,5 @@ runs:
     TEMPERATURE: ${{ inputs.temperature }}
     REFINE_TEMPERATURE: ${{ inputs.refine_temperature }}
     BASE_BRANCH: ${{ inputs.base_branch }}
-    COMMIT_MESSAGE: ${{ inputs.commit_message }}
+    PR_TITLE: ${{ inputs.pr_title }}
     GITHUB_TOKEN: ${{ inputs.github_token }}

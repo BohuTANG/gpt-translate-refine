@@ -28,8 +28,12 @@ inputs:
     description: "Output file pattern (e.g., 'docs/cn/**/*.{md,json}')"
     required: true
 
+  system_prompt:
+    description: "System prompt to set AI behavior. If provided, the content to translate will be sent as user prompt. Can be text or a file path."
+    required: false
+
   prompt:
-    description: "Customized prompt to send to AI model. Can be text or a file path."
+    description: "Customized user prompt to send to AI model. Can be text or a file path."
     required: false
 
   refine_enabled:
@@ -40,8 +44,12 @@ inputs:
     description: "AI model for refinement (uses the same service as primary translation but with a different model)"
     required: false
 
+  refine_system_prompt:
+    description: "System prompt for refinement AI model. Can be text or a file path."
+    required: false
+
   refine_prompt:
-    description: "Prompt for refinement AI model. Can be text or a file path."
+    description: "User prompt for refinement AI model. Can be text or a file path."
     required: false
   temperature:
     description: "Temperature setting for controlling randomness (0.0 to 1.0)"
@@ -72,9 +80,11 @@ runs:
     TARGET_LANG: ${{ inputs.target_lang }}
     INPUT_FILES: ${{ inputs.input_files }}
     OUTPUT_FILES: ${{ inputs.output_files }}
+    SYSTEM_PROMPT: ${{ inputs.system_prompt }}
     PROMPT: ${{ inputs.prompt }}
     REFINE_ENABLED: ${{ inputs.refine_enabled }}
     REFINE_AI_MODEL: ${{ inputs.refine_ai_model }}
+    REFINE_SYSTEM_PROMPT: ${{ inputs.refine_system_prompt }}
     REFINE_PROMPT: ${{ inputs.refine_prompt }}
     TEMPERATURE: ${{ inputs.temperature }}
     REFINE_TEMPERATURE: ${{ inputs.refine_temperature }}

@@ -49,9 +49,13 @@ def read_prompt_from_file(prompt_text):
     return prompt_text
 
 
+SYSTEM_PROMPT = os.getenv('SYSTEM_PROMPT', '')
+SYSTEM_PROMPT = read_prompt_from_file(SYSTEM_PROMPT)
+print('* System Prompt:', SYSTEM_PROMPT if SYSTEM_PROMPT else '[No system prompt will be used]')
+
 PROMPT = os.getenv('PROMPT', '')
 PROMPT = read_prompt_from_file(PROMPT)
-print('* Prompt:', PROMPT if PROMPT else '[Custom prompt will be used]')
+print('* User Prompt:', PROMPT if PROMPT else '[No custom user prompt will be used]')
 
 # Second AI model for refinement
 REFINE_ENABLED = os.getenv('REFINE_ENABLED', 'true').lower() == 'true'
@@ -69,9 +73,13 @@ print('* Temperature:', TEMPERATURE)
 REFINE_TEMPERATURE = float(os.getenv('REFINE_TEMPERATURE', TEMPERATURE))
 print('* Refinement Temperature:', REFINE_TEMPERATURE)
 
+REFINE_SYSTEM_PROMPT = os.getenv('REFINE_SYSTEM_PROMPT', '')
+REFINE_SYSTEM_PROMPT = read_prompt_from_file(REFINE_SYSTEM_PROMPT)
+print('* Refinement System Prompt:', REFINE_SYSTEM_PROMPT if REFINE_SYSTEM_PROMPT else '[No refinement system prompt will be used]')
+
 REFINE_PROMPT = os.getenv('REFINE_PROMPT', '')
 REFINE_PROMPT = read_prompt_from_file(REFINE_PROMPT)
-print('* Refinement Prompt:', REFINE_PROMPT if REFINE_PROMPT else '[Custom prompt will be used]')
+print('* Refinement User Prompt:', REFINE_PROMPT if REFINE_PROMPT else '[No custom refinement user prompt will be used]')
 
 COMMIT_MESSAGE = os.getenv('COMMIT_MESSAGE', 'Add LLM Translations')
 print('* Commit Message Title:', COMMIT_MESSAGE)
@@ -90,12 +98,13 @@ def reconstruct_markdown(yaml_data, translated_content):
     return f"---\n{yaml_str}---\n\n{translated_content}"
 
 
-def call_openai(model, user_prompt, temperature=None):
+def call_openai(model, user_prompt, system_prompt=None, temperature=None):
     """Call OpenAI API with the specified model
     
     Args:
         model: The AI model to use
         user_prompt: The prompt to send to the model
+        system_prompt: Optional system prompt to set the AI's behavior
         temperature: The temperature parameter (0.0 to 1.0) controlling randomness
     """
     # Initialize OpenAI client with base_url if provided
@@ -110,11 +119,18 @@ def call_openai(model, user_prompt, temperature=None):
         temperature = TEMPERATURE
     
     try:
+        messages = []
+        
+        # Add system message if provided
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        
+        # Add user message
+        messages.append({"role": "user", "content": user_prompt})
+        
         response = client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=messages,
             temperature=temperature
         )
         return response.choices[0].message.content
@@ -125,13 +141,21 @@ def call_openai(model, user_prompt, temperature=None):
 
 def translate_text(text):
     """Translates text using OpenAI."""
-    # If user provided a custom prompt, use it; otherwise use the default prompt
+    # Determine which prompts to use
+    system_prompt = SYSTEM_PROMPT
+    
+    # Set user prompt only if PROMPT is provided
     if PROMPT:
         user_prompt = PROMPT + "\n\n" + text
     else:
-        user_prompt = f"Translate this text to {TARGET_LANG}. If the text contains YAML front matter (between --- delimiters at the beginning), preserve the YAML structure and only translate values that should be translated, keeping keys and formatting intact. Also preserve all HTML tags, code blocks, and markdown formatting:\n\n{text}"
+        # If no user prompt provided, just use the text directly
+        user_prompt = text
     
-    return call_openai(AI_MODEL, user_prompt, temperature=TEMPERATURE)
+    # If system prompt is not provided, set to None
+    if not system_prompt:
+        system_prompt = None
+    
+    return call_openai(AI_MODEL, user_prompt, system_prompt=system_prompt, temperature=TEMPERATURE)
 
 
 def refine_translation(translated_text, original_text=None):
@@ -144,7 +168,10 @@ def refine_translation(translated_text, original_text=None):
     if not REFINE_ENABLED:
         return translated_text
     
-    # If user provided a custom refinement prompt, use it; otherwise use the default prompt
+    # Determine which prompts to use for refinement
+    system_prompt = REFINE_SYSTEM_PROMPT if REFINE_SYSTEM_PROMPT else None
+    
+    # Set user prompt only if REFINE_PROMPT is provided
     if REFINE_PROMPT:
         user_prompt = REFINE_PROMPT + "\n\n"
         if original_text:
@@ -152,14 +179,15 @@ def refine_translation(translated_text, original_text=None):
         else:
             user_prompt += translated_text
     else:
+        # If no refine prompt provided, just use the text directly with original text if available
         if original_text:
-            user_prompt = f"Please refine and polish the following {TARGET_LANG} translation while preserving all formatting, markup, and technical terms. Make it sound more natural and fluent. If the text contains YAML front matter (between --- delimiters at the beginning), ensure the YAML structure remains intact and only values that should be translated are modified.\n\nOriginal text:\n{original_text}\n\nTranslated text to refine:\n{translated_text}"
+            user_prompt = f"Original text:\n{original_text}\n\nTranslated text to refine:\n{translated_text}"
         else:
-            user_prompt = f"Please refine and polish the following {TARGET_LANG} translation while preserving all formatting, markup, and technical terms. Make it sound more natural and fluent. If the text contains YAML front matter (between --- delimiters at the beginning), ensure the YAML structure remains intact and only values that should be translated are modified.\n\n{translated_text}"
+            user_prompt = translated_text
     
     print(f"Refining translation with OpenAI (Model: {REFINE_AI_MODEL}, Temperature: {REFINE_TEMPERATURE})...")
     
-    return call_openai(REFINE_AI_MODEL, user_prompt, temperature=REFINE_TEMPERATURE)
+    return call_openai(REFINE_AI_MODEL, user_prompt, system_prompt=system_prompt, temperature=REFINE_TEMPERATURE)
 
 
 def get_input_files():

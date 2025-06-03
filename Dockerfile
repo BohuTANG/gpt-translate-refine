@@ -5,6 +5,9 @@ WORKDIR /app
 # Install git and GitHub CLI
 RUN apk add --no-cache git curl
 
+# Configure Git to trust the GitHub workspace directory
+RUN git config --global --add safe.directory /github/workspace
+
 # Install GitHub CLI
 RUN curl -sL https://github.com/cli/cli/releases/download/v2.45.0/gh_2.45.0_linux_amd64.tar.gz -o gh.tar.gz && \
     tar -xzf gh.tar.gz && \

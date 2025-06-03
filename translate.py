@@ -234,6 +234,11 @@ def create_pull_request(github_token, github_repository, branch_name, commit_mes
                 with open(pr_body_file, "w") as f:
                     f.write(pr_body)
                 
+                # Set GH_TOKEN environment variable for GitHub CLI
+                gh_env = os.environ.copy()
+                if github_token:
+                    gh_env['GH_TOKEN'] = github_token
+                
                 # Create PR using gh cli
                 result = subprocess.run(
                     ["gh", "pr", "create", 
@@ -241,7 +246,8 @@ def create_pull_request(github_token, github_repository, branch_name, commit_mes
                      "--body-file", pr_body_file,
                      "--head", branch_name],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    env=gh_env
                 )
                 
                 # Clean up the temporary file
@@ -511,6 +517,10 @@ def main():
     if (github_token or os.getenv('GITHUB_ACTIONS') == 'true') and github_repository:
         print("Running in GitHub Actions environment, setting up git...")
         
+        # Fix repository ownership issue
+        workspace = os.getenv('GITHUB_WORKSPACE', '.')
+        subprocess.run(["git", "config", "--global", "--add", "safe.directory", workspace])
+        
         # Set git config
         subprocess.run(["git", "config", "user.name", "github-actions[bot]"])
         subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"])
@@ -521,12 +531,28 @@ def main():
         subprocess.run(["git", "checkout", "-b", branch_name])
         
         # Add and commit changes
-        subprocess.run(["git", "add", "*"])
-        subprocess.run(["git", "commit", "-m", commit_message])
+        print("Adding translated files to git...")
+        # Use a more specific path for adding files to avoid adding unrelated files
+        for output_file in [get_output_path(f) for f in input_files]:
+            if os.path.exists(output_file):
+                subprocess.run(["git", "add", output_file])
         
-        # Push to the new branch
-        print(f"Pushing to branch: {branch_name}")
-        subprocess.run(["git", "push", "origin", branch_name])
+        # Check if there are changes to commit
+        status_result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+        if status_result.stdout.strip():
+            # There are changes to commit
+            print("Committing changes...")
+            subprocess.run(["git", "commit", "-m", commit_message])
+            
+            # Push to the new branch
+            print(f"Pushing to branch: {branch_name}")
+            push_result = subprocess.run(["git", "push", "--set-upstream", "origin", branch_name], capture_output=True, text=True)
+            print(f"Push result: {push_result.stdout}")
+            if push_result.stderr:
+                print(f"Push error: {push_result.stderr}")
+        else:
+            print("No changes to commit. Skipping PR creation.")
+            return
         
         # Create PR using GitHub API
         create_pull_request(github_token, github_repository, branch_name, commit_message, translation_table)

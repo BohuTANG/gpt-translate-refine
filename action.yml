@@ -58,6 +58,9 @@ inputs:
     description: "Custom commit message title (default: 'Add LLM Translations')"
     required: false
     default: "Add LLM Translations"
+  github_token:
+    description: "GitHub token for PR creation"
+    required: false
 
 runs:
   using: "docker"
@@ -77,3 +80,4 @@ runs:
     REFINE_TEMPERATURE: ${{ inputs.refine_temperature }}
     BASE_BRANCH: ${{ inputs.base_branch }}
     COMMIT_MESSAGE: ${{ inputs.commit_message }}
+    GITHUB_TOKEN: ${{ inputs.github_token }}

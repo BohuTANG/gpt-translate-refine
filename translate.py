@@ -86,14 +86,7 @@ class TranslationWorkflow:
         
         print(f"Output path: {output_path}")
         
-        # Special handling for Markdown files with YAML frontmatter
-        yaml_data = None
-        has_frontmatter = False
-        
-        if file_path.lower().endswith('.md'):
-            yaml_data, content, has_frontmatter = self.file_processor.extract_yaml_and_content(content)
-        
-        # Translate content
+        # Translate the entire content (including any YAML frontmatter)
         print(f"Translating with model: {self.config.ai_model}...")
         translated_content = self.translator.translate(content)
         
@@ -104,10 +97,6 @@ class TranslationWorkflow:
         # Apply refinement if enabled
         if self.config.refine_enabled:
             translated_content = self._refine_translation(translated_content, content)
-        
-        # Reconstruct Markdown with YAML frontmatter if needed
-        if has_frontmatter:
-            translated_content = self.file_processor.reconstruct_markdown(yaml_data, translated_content, has_frontmatter)
         
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)

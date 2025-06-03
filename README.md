@@ -53,7 +53,7 @@ jobs:
           # Optional refinement settings (enabled by default)
           refine_ai_model: "gpt-4-turbo"  # Specify a different OpenAI model for refinement
           # Optional git settings
-          commit_message: "Add LLM Translations"  # Custom commit message title
+          pr_title: "Add LLM Translations"  # Custom PR title
 ```
 ## 🔧 Parameters
 
@@ -76,7 +76,7 @@ jobs:
 - `refine_prompt`: Customize the prompt for refinement. Can be text or a file path.
 
 ### Git Options
-- `commit_message`: Custom commit message title (default: **Add LLM Translations**).
+- `pr_title`: Custom PR title (default: **Add LLM Translations V3**).
 
 ## 🔑 Setting Up the API Key
 - Go to **Settings** → **Secrets and Variables** → **Actions** in your repository.

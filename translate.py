@@ -35,6 +35,10 @@ class TranslationWorkflow:
         
         # Generate a unique session ID for this translation run
         self.session_id = self._generate_session_id()
+        
+        # Statistics tracking
+        self.workflow_start_time = time.time()
+        self.workflow_start_datetime = datetime.datetime.now()
     
     def process_input_path(self, input_path):
         """Process a single input path (file or directory)"""
@@ -232,10 +236,78 @@ class TranslationWorkflow:
         else:
             pr_title = f"{base_pr_title} [ID:{self.session_id}]"
         
+        # Calculate statistics for this batch
+        batch_elapsed_time = time.time() - self.batch_start_time
+        total_elapsed_time = time.time() - self.workflow_start_time
+        
+        # Get token statistics from translator
+        token_stats = self.translator.get_statistics()
+        input_tokens = token_stats['input_tokens']
+        output_tokens = token_stats['output_tokens']
+        api_calls = token_stats['api_calls']
+        
+        # Calculate translation rate (tokens per minute)
+        minutes_elapsed = total_elapsed_time / 60
+        translation_rate = int(output_tokens / minutes_elapsed) if minutes_elapsed > 0 else 0
+        
+        # Format times
+        def format_time(seconds):
+            hours, remainder = divmod(seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            if hours > 0:
+                return f"{int(hours)}h {int(minutes)}m"
+            elif minutes > 0:
+                return f"{int(minutes)}m {int(seconds)}s"
+            else:
+                return f"{int(seconds)}s"
+        
+        total_time_formatted = format_time(total_elapsed_time)
+        avg_time_per_file = format_time(total_elapsed_time / len(self.processed_files)) if self.processed_files else "0s"
+        
+        # Format start and end times
+        start_time_str = self.workflow_start_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        end_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Create statistics section
+        statistics_section = (
+            f"### 📊 Translation Statistics\n"
+            f"- Session ID: {self.session_id}\n"
+            f"- Total Time: {total_time_formatted}\n"
+            f"- Average Time per File: {avg_time_per_file}\n"
+            f"- Input Tokens: {input_tokens:,}\n"
+            f"- Output Tokens: {output_tokens:,}\n"
+            f"- Translation Rate: {translation_rate:,} tokens/min\n"
+            f"- API Calls: {api_calls}\n"
+            f"- Start Time: {start_time_str}\n"
+            f"- End Time: {end_time_str}\n"
+        )
+        
+        # Calculate progress information for multi-batch workflows
+        progress_section = ""
+        if self.total_batches > 1:
+            total_files = sum(len(batch) for batch in self.all_batches)
+            completed_files = sum(len(batch) for batch in self.all_batches[:self.current_batch])
+            remaining_files = total_files - completed_files
+            completion_percent = (completed_files / total_files) * 100 if total_files > 0 else 0
+            
+            # Estimate remaining time based on current rate
+            avg_time_per_file_seconds = total_elapsed_time / completed_files if completed_files > 0 else 0
+            estimated_remaining_time = avg_time_per_file_seconds * remaining_files
+            remaining_time_formatted = format_time(estimated_remaining_time)
+            
+            progress_section = (
+                f"\n### 🔄 Translation Progress\n"
+                f"- ✅ Completed: {completed_files}/{total_files} files ({completion_percent:.1f}%)\n"
+                f"- ⏳ Remaining: {remaining_files}/{total_files} files\n"
+                f"- 🕒 Estimated Time Remaining: {remaining_time_formatted}\n"
+            )
+        
         # Format the complete commit message (used for commit and PR body)
         commit_message = (
-            f"## ✅ Translated to {self.config.target_lang} - {summary} (Batch {self.current_batch}/{self.total_batches})\n\n"
-            f"Session ID: {self.session_id}\n\n"
+            f"Translated to {self.config.target_lang} - {summary} (Batch {self.current_batch}/{self.total_batches})\n\n"
+            f"{statistics_section}"
+            f"{progress_section}\n"
+            f"### 📁 File Summary\n"
             f"{''.join(f'{line}\n' for line in translation_table)}"
         )
         
@@ -384,6 +456,7 @@ class TranslationWorkflow:
             
             # Set total number of batches
             self.total_batches = len(batches)
+            self.all_batches = batches  # Store all batches for progress tracking
             print(f"\n📃 Created {self.total_batches} batch(es) from {len(all_files_to_translate)} files")
             
             # Process each batch

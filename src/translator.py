@@ -13,6 +13,11 @@ class Translator:
         """Initialize translator with configuration"""
         self.config = config
         self.client = self._create_openai_client()
+        
+        # Statistics tracking
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.api_calls = 0
     
     def _create_openai_client(self) -> OpenAI:
         """Create and configure OpenAI client"""
@@ -44,6 +49,14 @@ class Translator:
                 temperature=temperature
             )
             
+            # Track token usage
+            if hasattr(response, 'usage') and response.usage:
+                self.input_tokens += response.usage.prompt_tokens
+                self.output_tokens += response.usage.completion_tokens
+            
+            # Increment API call counter
+            self.api_calls += 1
+            
             return response.choices[0].message.content
         except Exception as e:
             print(f"Error calling OpenAI API: {e}")
@@ -56,12 +69,14 @@ class Translator:
         user_prompt = f"{self.config.prompt}\n\n{text}" if self.config.prompt else text
         
         print(f"Translating with model: {self.config.ai_model}...")
-        return self.call_openai(
+        result = self.call_openai(
             model=self.config.ai_model, 
             user_prompt=user_prompt, 
             system_prompt=system_prompt, 
             temperature=self.config.temperature
         )
+        
+        return result
     
     def refine(self, translated_text: str, original_text: Optional[str] = None) -> str:
         """Refine the translated text using OpenAI"""
@@ -84,12 +99,23 @@ class Translator:
             user_prompt = translated_text
         
         print(f"Refining translation with model: {self.config.refine_ai_model}...")
-        return self.call_openai(
+        result = self.call_openai(
             model=self.config.refine_ai_model, 
             user_prompt=user_prompt, 
             system_prompt=system_prompt, 
             temperature=self.config.refine_temperature
         )
+        
+        return result
+
+
+    def get_statistics(self) -> dict:
+        """Get token usage statistics"""
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "api_calls": self.api_calls
+        }
 
 
 class TextUtils:

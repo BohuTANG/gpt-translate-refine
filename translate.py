@@ -6,6 +6,7 @@ import traceback
 import math
 import uuid
 import time
+import datetime
 from typing import List, Dict, Tuple
 
 from src.config import Config
@@ -81,53 +82,71 @@ class TranslationWorkflow:
     
     def _translate_file(self, file_path):
         """Translate a single file"""
-        print(f"Translating file: {file_path}")
-        
-        # Read file content
-        content = self.file_processor.read_file(file_path)
-        if not content:
-            print(f"Error: Could not read file or file is empty: {file_path}")
-            return
-        
-        # Get output path
-        output_path = self.file_processor.get_output_path(file_path)
-        if not output_path:
-            print(f"Error: Could not determine output path for: {file_path}")
-            return
-        
-        print(f"Output path: {output_path}")
-        
-        # Translate the entire content (including any YAML frontmatter)
-        print(f"Translating with model: {self.config.ai_model}...")
-        translated_content = self.translator.translate(content)
-        
-        if not translated_content:
-            print(f"Error: Translation failed for: {file_path}")
-            return
-        
-        # Print the first translation result
-        print("\n=== First Translation Result ===\n")
-        print(translated_content)
-        print("\n==============================\n")
-        
-        # Apply refinement if enabled
-        if self.config.refine_enabled:
-            translated_content = self._refine_translation(translated_content, content)
-        
-        # Ensure output directory exists
-        output_dir = os.path.dirname(output_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
-        
-        # Write translated content to output file
-        if self.file_processor.write_file(output_path, translated_content):
-            print(f"✅ Translation saved to: {output_path}")
+        try:
+            start_time = time.time()
+            print(f"\n📄 Translating file: {file_path}")
             
-            # Track processed files
-            self.processed_files.append(file_path)
-            self.output_files.append(output_path)
-        else:
-            print(f"❌ Error: Could not write to output file: {output_path}")
+            # Skip if file doesn't exist
+            if not os.path.exists(file_path):
+                print(f"\n❌ File not found: {file_path}")
+                return
+            
+            # Read file content
+            content = self.file_processor.read_file(file_path)
+            if not content:
+                print(f"Error: Could not read file or file is empty: {file_path}")
+                return
+            
+            # Get output path
+            output_path = self.file_processor.get_output_path(file_path)
+            if not output_path:
+                print(f"Error: Could not determine output path for: {file_path}")
+                return
+            
+            print(f"Output path: {output_path}")
+            
+            # Translate the entire content (including any YAML frontmatter)
+            print(f"Translating with model: {self.config.ai_model}...")
+            translated_content = self.translator.translate(content)
+            
+            if not translated_content:
+                print(f"Error: Translation failed for: {file_path}")
+                return
+            
+            # Print the first translation result
+            print("\n=== First Translation Result ===\n")
+            print(translated_content)
+            print("\n==============================\n")
+            
+            # Apply refinement if enabled
+            if self.config.refine_enabled:
+                translated_content = self._refine_translation(translated_content, content)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(output_path)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Write translated content to output file
+            if self.file_processor.write_file(output_path, translated_content):
+                print(f"✅ Translation saved to: {output_path}")
+                
+                # Track the processed file
+                self.processed_files.append(file_path)
+                self.output_files.append(output_path)
+                
+                # Add to directory map if this file is part of a directory being processed
+                for dir_path in self.directory_files_map:
+                    if file_path.startswith(dir_path):
+                        self.directory_files_map[dir_path].append(file_path)
+                
+                # Log completion time
+                elapsed_time = time.time() - start_time
+                print(f"  ✅ Completed in {elapsed_time:.2f} seconds")
+            
+        except Exception as e:
+            print(f"\n❌ Error translating file {file_path}: {e}")
+            traceback.print_exc()
     
     def _refine_translation(self, translated_content, original_text):
         """Refine translation and show diff between original and refined versions"""
@@ -237,11 +256,75 @@ class TranslationWorkflow:
         random_part = uuid.uuid4().hex[:3]    # 3 characters from UUID
         return f"{timestamp}{random_part}"  # Format: 1234abc
     
+    def _group_files_by_directory(self, input_files):
+        """Group files by their last-level directory structure"""
+        dir_groups = {}
+        
+        for file_path in input_files:
+            # Get the parent directory path
+            parent_dir = os.path.dirname(file_path)
+            # Get the last directory name
+            last_dir = os.path.basename(parent_dir)
+            
+            # If parent directory is empty (file is in root), use a special key
+            if not last_dir:
+                last_dir = "_root_"
+                
+            # Add file to its directory group
+            if last_dir not in dir_groups:
+                dir_groups[last_dir] = []
+            dir_groups[last_dir].append(file_path)
+        
+        return dir_groups
+    
+    def _create_batches_by_directory(self, dir_groups):
+        """Create batches based on directory groups, trying to keep directories together"""
+        batches = []
+        current_batch = []
+        current_batch_size = 0
+        
+        # Sort directories by size (number of files) in descending order
+        # This helps process larger directories first
+        sorted_dirs = sorted(dir_groups.items(), key=lambda x: len(x[1]), reverse=True)
+        
+        for dir_name, files in sorted_dirs:
+            dir_size = len(files)
+            
+            # If this directory alone exceeds batch_size but current batch is empty,
+            # make this directory its own batch (keep directory together)
+            if dir_size > self.config.batch_size and current_batch_size == 0:
+                batches.append(files)
+                print(f"  📂 Directory '{dir_name}' with {dir_size} files will be its own batch")
+                continue
+                
+            # If adding this directory would exceed batch_size and we already have files,
+            # finalize current batch and start a new one
+            if current_batch_size + dir_size > self.config.batch_size and current_batch_size > 0:
+                batches.append(current_batch)
+                current_batch = []
+                current_batch_size = 0
+            
+            # Add all files from this directory to the current batch
+            current_batch.extend(files)
+            current_batch_size += dir_size
+            print(f"  📂 Added directory '{dir_name}' with {dir_size} files to batch")
+        
+        # Add any remaining files in the current batch
+        if current_batch:
+            batches.append(current_batch)
+        
+        return batches
+    
     def run(self):
         """Run the complete translation workflow with batch processing"""
         try:
-            # Display session ID at the start
+            # Record start time
+            workflow_start_time = time.time()
+            start_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Display session ID and start time
             print(f"🆔 Translation session ID: {self.session_id}")
+            print(f"🕒 Started at: {start_time_str}")
             
             # Get input files
             input_files = self.file_processor.get_input_files()
@@ -265,43 +348,78 @@ class TranslationWorkflow:
             if not all_files_to_translate:
                 print("❌ No valid files found to translate")
                 return False
-                
-            # Calculate batches
-            batch_size = self.config.batch_size
-            self.total_batches = math.ceil(len(all_files_to_translate) / batch_size)
-            print(f"📦 Processing {len(all_files_to_translate)} files in {self.total_batches} batches (batch size: {batch_size})")
             
-            # Process files in batches
-            for batch_index in range(self.total_batches):
-                self.current_batch = batch_index + 1  # 1-based indexing for display
-                
+            # Group files by directory
+            print("\n📁 Grouping files by directory structure...")
+            dir_groups = self._group_files_by_directory(all_files_to_translate)
+            
+            # Create batches based on directory groups
+            print("\n📂 Creating batches based on directory structure...")
+            batches = self._create_batches_by_directory(dir_groups)
+            
+            # Set total number of batches
+            self.total_batches = len(batches)
+            print(f"\n📃 Created {self.total_batches} batch(es) from {len(all_files_to_translate)} files")
+            
+            # Process each batch
+            for batch_index, batch_files in enumerate(batches):
                 # Reset tracking for this batch
+                self.current_batch = batch_index + 1  # 1-based index for display
                 self.processed_files = []
                 self.output_files = []
+                self.directory_files_map = {}
                 
-                # Get files for this batch
-                start_idx = batch_index * batch_size
-                end_idx = min(start_idx + batch_size, len(all_files_to_translate))
-                batch_files = all_files_to_translate[start_idx:end_idx]
-                
-                print(f"\n📋 Processing batch {self.current_batch}/{self.total_batches} with {len(batch_files)} files")
+                batch_start_time = time.time()
+                batch_start_str = datetime.datetime.now().strftime("%H:%M:%S")
+                print(f"\n✨ Processing batch {self.current_batch}/{self.total_batches} with {len(batch_files)} files")
+                print(f"  🕒 Batch started at: {batch_start_str}")
                 
                 # Process each file in this batch
                 for file_path in batch_files:
                     self._translate_file(file_path)
                 
-                # Exit if no files were processed in this batch
-                if not self.processed_files:
-                    print(f"⚠️ No files were processed in batch {self.current_batch}")
-                    continue
+                # Calculate batch statistics
+                batch_files_count = len(self.processed_files)
+                batch_elapsed_time = time.time() - batch_start_time
+                avg_time_per_file = batch_elapsed_time / batch_files_count if batch_files_count > 0 else 0
                 
-                print(f"✅ Successfully translated {len(self.processed_files)} files in batch {self.current_batch}/{self.total_batches}")
-                
-                # Prepare commit message and PR title for this batch
-                commit_message, translation_table, pr_title = self.prepare_commit_message(input_files)
-                
-                # Handle git operations for this batch
-                self.handle_git_operations(commit_message, translation_table, pr_title)
+                # If files were processed in this batch, handle git operations
+                if self.processed_files:
+                    # Log batch completion statistics
+                    print(f"  📊 Batch {self.current_batch} statistics:")
+                    print(f"    - Files processed: {batch_files_count}")
+                    print(f"    - Total time: {batch_elapsed_time:.2f} seconds")
+                    print(f"    - Average time per file: {avg_time_per_file:.2f} seconds")
+                    
+                    # Prepare commit message and PR title
+                    commit_message, translation_table, pr_title = self.prepare_commit_message()
+                    
+                    # Handle git operations for this batch
+                    self.handle_git_operations(commit_message, translation_table, pr_title)
+                else:
+                    print(f"\n⚠️ No files were processed in batch {self.current_batch}")
+            
+            # Calculate and display overall workflow statistics
+            workflow_elapsed_time = time.time() - workflow_start_time
+            total_files_processed = sum(len(batch) for batch in batches)
+            
+            # Format time in a readable way
+            hours, remainder = divmod(workflow_elapsed_time, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            time_format = f"{int(hours)}h {int(minutes)}m {seconds:.2f}s" if hours > 0 else \
+                         f"{int(minutes)}m {seconds:.2f}s" if minutes > 0 else \
+                         f"{seconds:.2f}s"
+            
+            print(f"\n🌟 Translation workflow completed!")
+            print(f"  📊 Overall statistics:")
+            print(f"    - Total files processed: {total_files_processed}")
+            print(f"    - Total batches: {self.total_batches}")
+            print(f"    - Total time: {time_format}")
+            print(f"    - Average time per file: {workflow_elapsed_time / total_files_processed:.2f} seconds")
+            print(f"    - Average time per batch: {workflow_elapsed_time / self.total_batches:.2f} seconds")
+            
+            end_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"  🕒 Finished at: {end_time_str}")
             
             return True
             

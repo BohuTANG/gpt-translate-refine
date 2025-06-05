@@ -32,6 +32,7 @@ class TranslationWorkflow:
         # Batch processing tracking
         self.current_batch = 0
         self.total_batches = 0
+        self.current_batch_files = []  # Initialize empty list for current batch files
         
         # Generate a unique session ID for this translation run
         self.session_id = self._generate_session_id()
@@ -56,9 +57,22 @@ class TranslationWorkflow:
         # Process directory or file
         if os.path.isdir(input_path):
             files = self._process_directory(input_path)
-            for file_path in files:
-                self._translate_file(file_path)
+            if files:
+                # Initialize batch processing variables
+                self.current_batch_files = files
+                self.batch_start_time = time.time()
+                self.processed_files = []
+                
+                # Process each file
+                for file_path in files:
+                    self._translate_file(file_path)
+            else:
+                print(f"No files to translate in directory: {input_path}")
         else:
+            # For single file, initialize batch variables
+            self.current_batch_files = [input_path]
+            self.batch_start_time = time.time()
+            self.processed_files = []
             self._translate_file(input_path)
     
     def _handle_missing_path(self, input_path):
@@ -94,7 +108,8 @@ class TranslationWorkflow:
             # Calculate current progress in batch
             current_file_index = len(self.processed_files) + 1
             total_files_in_batch = len(self.current_batch_files)
-            progress_percent = (current_file_index / total_files_in_batch) * 100
+            # Avoid division by zero
+            progress_percent = (current_file_index / total_files_in_batch) * 100 if total_files_in_batch > 0 else 0
             
             # Display progress information
             print(f"\n📄 Processing file {current_file_index}/{total_files_in_batch} ({progress_percent:.1f}%)")
@@ -103,7 +118,9 @@ class TranslationWorkflow:
             # If we have processed files, show elapsed time and estimated time remaining
             if len(self.processed_files) > 0:
                 elapsed_time = time.time() - self.batch_start_time
-                avg_time_per_file = elapsed_time / len(self.processed_files)
+                # Avoid division by zero
+                processed_files_count = len(self.processed_files)
+                avg_time_per_file = elapsed_time / processed_files_count if processed_files_count > 0 else 0
                 remaining_files = total_files_in_batch - current_file_index
                 estimated_time_remaining = avg_time_per_file * remaining_files
                 

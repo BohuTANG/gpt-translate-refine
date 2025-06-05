@@ -392,11 +392,11 @@ class GitOperations:
                 print("  ℹ️ No changes to update in PR")
             return True
         except Exception as e:
-            print(f"  ❌ Error updating pull request via API: {e}")
+            print(f"  Error updating pull request via API: {e}")
             return False
     
     def mark_pr_ready_for_review(self, pr_number: int) -> bool:
-        """Mark a draft PR as ready for review
+        """Mark a pull request as ready for review
         
         Args:
             pr_number: PR number to mark as ready
@@ -414,25 +414,32 @@ class GitOperations:
             
             print(f"🚀 Marking PR #{pr_number} as ready for review...")
             
-            # Ready for review endpoint
-            url = f"{self.github_api_url}/repos/{owner}/{repo}/pulls/{pr_number}/ready_for_review"
+            # Ready for review endpoint - using PATCH to update draft status
+            url = f"{self.github_api_url}/repos/{owner}/{repo}/pulls/{pr_number}"
             headers = {
                 'Authorization': f'token {self.github_token}',
                 'Accept': 'application/vnd.github.v3+json'
             }
             
+            # Set draft to false to mark as ready for review
+            data = {
+                'draft': False
+            }
+            
             print(f"  🛠️ Making API request to {url}")
-            response = requests.post(url, headers=headers)
+            response = requests.patch(url, headers=headers, json=data)
+            
             if response.status_code in (200, 201):
                 print(f"  ✅ Pull request #{pr_number} marked as ready for review (Status: {response.status_code})")
                 
                 # Try to extract PR URL from response
                 try:
-                    pr_url = response.json().get('html_url', '')
+                    pr_data = response.json()
+                    pr_url = pr_data.get('html_url', '')
                     if pr_url:
                         print(f"  🔗 PR URL: {pr_url}")
-                except:
-                    pass
+                except Exception as e:
+                    print(f"  ⚠️ Could not extract PR URL from response: {e}")
                     
                 return True
             else:

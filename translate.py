@@ -174,7 +174,7 @@ class TranslationWorkflow:
         """Prepare commit message and PR title with translation details for a single file"""
         # Create a table for the translated file
         files_table = [
-            "### 📄 Translated File",
+            "### 📄 Translated Files",
             "| **Source** | **Output** | **Language** |",
             "| :--- | :--- | :--- |"
         ]
@@ -237,14 +237,14 @@ class TranslationWorkflow:
         start_time_str = self.workflow_start_datetime.strftime("%Y-%m-%d %H:%M:%S")
         end_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Add progress information
+        # Calculate progress percentage
         progress_percent = (self.current_file_index / self.total_files * 100) if self.total_files > 0 else 0
-        commit_message.append(f"\n### 🔄 Translation Progress\n- File {self.current_file_index}/{self.total_files} ({progress_percent:.1f}%)")
         
-        # Add statistics section
+        # Add statistics section first
         commit_message.extend([
             "\n### 📊 Translation Statistics",
             f"- Session ID: {self.session_id}",
+            f"- File {self.current_file_index}/{self.total_files} ({progress_percent:.1f}%)",
             f"- Total Time: {total_time_formatted}",
             f"- Input Tokens: {input_tokens:,}",
             f"- Output Tokens: {output_tokens:,}",
@@ -256,12 +256,27 @@ class TranslationWorkflow:
         # Join all lines with newlines
         commit_message = "\n".join(commit_message)
         
-        # Create a PR title using the file name
-        # For the first file, add DRAFT prefix to PR title
-        if self.current_file_index == 1:
-            pr_title = f"[DRAFT] Translate {file_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
+        # Create PR title with directory information
+        # Extract directory name for PR title
+        directory_name = "files"
+        if dir_path:
+            # Get the last directory component for cleaner PR titles
+            directory_parts = dir_path.split('/')
+            if len(directory_parts) > 0:
+                # Use the last non-empty directory name
+                for part in reversed(directory_parts):
+                    if part.strip():
+                        directory_name = part
+                        break
+        
+        # Always add DRAFT prefix to PR title until the last file is processed
+        # The [DRAFT] prefix will be removed when marking PR ready for review
+        if self.current_file_index < self.total_files:
+            pr_title = f"[DRAFT] AI Translate {directory_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
         else:
-            pr_title = f"Translate {file_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
+            # For the last file, we'll remove the DRAFT prefix when marking PR ready for review
+            # But we still create it with DRAFT prefix initially
+            pr_title = f"[DRAFT] AI Translate {directory_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
         
         return commit_message, files_table, pr_title
     

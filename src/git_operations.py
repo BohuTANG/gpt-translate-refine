@@ -99,8 +99,18 @@ class GitOperations:
             print(f"Error setting up Git: {e}")
             return False
     
-    def commit_and_push(self, output_files: List[str], commit_message: str, batch_suffix: str = "") -> Optional[str]:
-        """Commit changes and push to remote, return branch name if created"""
+    def commit_and_push(self, output_files: List[str], commit_message: str, batch_suffix: str = "", branch_name: Optional[str] = None) -> Optional[str]:
+        """Commit changes and push to remote, return branch name if created
+        
+        Args:
+            output_files: List of files to add to the commit
+            commit_message: Commit message
+            batch_suffix: Optional suffix to add to the branch name
+            branch_name: Optional custom branch name to use (if provided, batch_suffix is ignored)
+            
+        Returns:
+            The branch name if successfully pushed, None otherwise
+        """
         if not self.in_github_actions:
             print("Not running in GitHub Actions, skipping commit and push")
             return None
@@ -121,14 +131,26 @@ class GitOperations:
                 print("No changes to commit")
                 return None
             
-            # Create a new branch for the PR with optional batch suffix
-            branch_name = f"translation{batch_suffix}-{uuid.uuid4().hex[:8]}"
+            # Use provided branch name or create a new one
+            if not branch_name:
+                branch_name = f"translation{batch_suffix}-{uuid.uuid4().hex[:8]}"
             
-            # Create and checkout branch
-            code, _, stderr = self.run_command(['git', 'checkout', '-b', branch_name])
-            if code != 0:
-                print(f"Error creating branch: {stderr}")
-                return None
+            # Check if branch exists
+            code, stdout, _ = self.run_command(['git', 'branch', '--list', branch_name])
+            branch_exists = stdout.strip() != ""
+            
+            if branch_exists:
+                # Checkout existing branch
+                code, _, stderr = self.run_command(['git', 'checkout', branch_name])
+                if code != 0:
+                    print(f"Error checking out existing branch: {stderr}")
+                    return None
+            else:
+                # Create and checkout new branch
+                code, _, stderr = self.run_command(['git', 'checkout', '-b', branch_name])
+                if code != 0:
+                    print(f"Error creating branch: {stderr}")
+                    return None
             
             # Add files
             for file in output_files:
@@ -155,40 +177,91 @@ class GitOperations:
             print(f"Error in commit and push: {e}")
             return None
     
-    def create_pull_request(self, branch_name: str, title: str, body_lines: List[str]) -> bool:
-        """Create a pull request using GitHub CLI or API"""
+    def create_pull_request(self, branch_name: str, title: str, body_lines: List[str], draft: bool = False) -> Optional[int]:
+        """Create a pull request using GitHub CLI or API
+        
+        Args:
+            branch_name: The name of the branch to create PR from
+            title: PR title
+            body_lines: List of strings to form the PR body
+            draft: Whether to create PR as draft
+            
+        Returns:
+            PR number if successful, None otherwise
+        """
         if not self.in_github_actions:
             print("Not running in GitHub Actions, skipping PR creation")
-            return False
+            return None
         
         if not branch_name or not self.github_token or not self.github_repository:
             print("Missing required information for PR creation")
-            return False
+            return None
         
         # Format PR body
         body = "\n".join(body_lines)
         
         # Try using GitHub CLI first
-        if self._try_create_pr_with_cli(title, body):
-            return True
+        pr_number = self._try_create_pr_with_cli(title, body, draft)
+        if pr_number is not None:
+            return pr_number
         
         # Fall back to GitHub API
-        return self._try_create_pr_with_api(branch_name, title, body)
+        return self._try_create_pr_with_api(branch_name, title, body, draft)
     
-    def _try_create_pr_with_cli(self, title: str, body: str) -> bool:
-        """Try to create PR using GitHub CLI"""
+    def _try_create_pr_with_cli(self, title: str, body: str, draft: bool = False) -> Optional[int]:
+        """Try to create PR using GitHub CLI
+        
+        Returns:
+            PR number if successful, None otherwise
+        """
         try:
-            code, _, _ = self.run_command(['gh', 'pr', 'create', '--title', title, '--body', body, '--base', 'main'])
+            cmd = ['gh', 'pr', 'create', '--title', title, '--body', body, '--base', 'main']
+            if draft:
+                cmd.append('--draft')
+                
+            code, stdout, stderr = self.run_command(cmd)
             if code == 0:
-                print("Pull request created successfully using GitHub CLI")
-                return True
-            return False
+                # Try to extract PR number from stdout (usually contains the PR URL)
+                pr_url = stdout.strip()
+                pr_number = self._extract_pr_number_from_url(pr_url)
+                print(f"Pull request #{pr_number} created successfully using GitHub CLI")
+                return pr_number
+            print(f"Failed to create PR with GitHub CLI: {stderr}")
+            return None
         except Exception as e:
             print(f"GitHub CLI not available or error: {e}")
-            return False
+            return None
+            
+    def _extract_pr_number_from_url(self, pr_url: str) -> Optional[int]:
+        """Extract PR number from GitHub PR URL
+        
+        Args:
+            pr_url: GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)
+            
+        Returns:
+            PR number if found, None otherwise
+        """
+        try:
+            # Try to extract PR number from URL
+            if '/pull/' in pr_url:
+                pr_number = int(pr_url.split('/pull/')[1].split('/')[0].split('#')[0])
+                return pr_number
+            return None
+        except Exception:
+            return None
     
-    def _try_create_pr_with_api(self, branch_name: str, title: str, body: str) -> bool:
-        """Try to create PR using GitHub API"""
+    def _try_create_pr_with_api(self, branch_name: str, title: str, body: str, draft: bool = False) -> Optional[int]:
+        """Try to create PR using GitHub API
+        
+        Args:
+            branch_name: The name of the branch to create PR from
+            title: PR title
+            body: PR body
+            draft: Whether to create PR as draft
+            
+        Returns:
+            PR number if successful, None otherwise
+        """
         try:
             # Extract owner and repo from GITHUB_REPOSITORY
             owner, repo = self.github_repository.split('/')
@@ -208,17 +281,102 @@ class GitOperations:
                 'title': title,
                 'body': body,
                 'head': branch_name,
-                'base': base_branch
+                'base': base_branch,
+                'draft': draft
             }
             
             response = requests.post(url, headers=headers, json=data)
             if response.status_code in (200, 201):
-                pr_url = response.json().get('html_url', '')
-                print(f"Pull request created successfully: {pr_url}")
-                return True
+                pr_data = response.json()
+                pr_url = pr_data.get('html_url', '')
+                pr_number = pr_data.get('number')
+                print(f"Pull request #{pr_number} created successfully: {pr_url}")
+                return pr_number
             else:
                 print(f"Error creating pull request via API: {response.status_code} - {response.text}")
-                return False
+                return None
         except Exception as e:
             print(f"Error creating pull request via API: {e}")
+            return None
+    
+    def update_pull_request(self, pr_number: int, title: str = None, body: str = None) -> bool:
+        """Update an existing pull request
+        
+        Args:
+            pr_number: PR number to update
+            title: New PR title (optional)
+            body: New PR body (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.in_github_actions or not self.github_token or not self.github_repository:
+            print("Not running in GitHub Actions or missing credentials, skipping PR update")
+            return False
+            
+        try:
+            # Extract owner and repo from GITHUB_REPOSITORY
+            owner, repo = self.github_repository.split('/')
+            
+            # Update PR using GitHub API
+            url = f"{self.github_api_url}/repos/{owner}/{repo}/pulls/{pr_number}"
+            headers = {
+                'Authorization': f'token {self.github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # Only include fields that need to be updated
+            data = {}
+            if title is not None:
+                data['title'] = title
+            if body is not None:
+                data['body'] = body
+                
+            # Only make API call if there's something to update
+            if data:
+                response = requests.patch(url, headers=headers, json=data)
+                if response.status_code in (200, 201):
+                    print(f"Pull request #{pr_number} updated successfully")
+                    return True
+                else:
+                    print(f"Error updating pull request via API: {response.status_code} - {response.text}")
+                    return False
+            return True
+        except Exception as e:
+            print(f"Error updating pull request via API: {e}")
+            return False
+    
+    def mark_pr_ready_for_review(self, pr_number: int) -> bool:
+        """Mark a draft PR as ready for review
+        
+        Args:
+            pr_number: PR number to mark as ready
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.in_github_actions or not self.github_token or not self.github_repository:
+            print("Not running in GitHub Actions or missing credentials, skipping PR update")
+            return False
+            
+        try:
+            # Extract owner and repo from GITHUB_REPOSITORY
+            owner, repo = self.github_repository.split('/')
+            
+            # Ready for review endpoint
+            url = f"{self.github_api_url}/repos/{owner}/{repo}/pulls/{pr_number}/ready_for_review"
+            headers = {
+                'Authorization': f'token {self.github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            response = requests.post(url, headers=headers)
+            if response.status_code in (200, 201):
+                print(f"Pull request #{pr_number} marked as ready for review")
+                return True
+            else:
+                print(f"Error marking PR as ready for review: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            print(f"Error marking PR as ready for review: {e}")
             return False

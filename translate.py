@@ -39,6 +39,10 @@ class TranslationWorkflow:
         # Statistics tracking
         self.workflow_start_time = time.time()
         self.workflow_start_datetime = datetime.datetime.now()
+        
+        # PR tracking
+        self.pr_number = None
+        self.pr_branch_name = None
     
     def process_input_path(self, input_path):
         """Process a single input path (file or directory)"""
@@ -193,32 +197,51 @@ class TranslationWorkflow:
         return refined_content
     
     def prepare_commit_message(self, input_files):
-        """Prepare commit message with formatted table of translated files"""
-        # Create a table for the commit message
-        translation_table = [
-            "| **Source** | **Output/Count** | **Language** |",
+        """Prepare commit message and PR title with translation details"""
+        # Create a table for the translated directories
+        directories_table = [
+            "### 📂 Translated Directories",
+            "| **Directory** | **Files Count** | **Language** |",
             "| :--- | :--- | :--- |"
         ]
         
-        # Check if we have directories in the input
-        has_directories = any(os.path.isdir(p) for p in input_files if os.path.exists(p))
+        # Create a table for the translated files
+        files_table = [
+            "### 📄 Translated Files",
+            "| **Source** | **Output** | **Language** |",
+            "| :--- | :--- | :--- |"
+        ]
         
-        # Add directory summaries if applicable
-        if has_directories:
-            for input_path in input_files:
-                if os.path.exists(input_path) and os.path.isdir(input_path):
-                    dir_files = self.directory_files_map.get(input_path, [])
-                    translation_table.append(
-                        f"| 📁 `{input_path}` | {len(dir_files)} files | {self.config.target_lang} |"
-                    )
+        # Track unique directories from processed files
+        unique_dirs = set()
+        for source_file in self.processed_files:
+            # Get directory path
+            dir_path = os.path.dirname(source_file)
+            if dir_path:
+                unique_dirs.add(dir_path)
+        
+        # Sort directories for consistent output
+        sorted_dirs = sorted(unique_dirs)
+        
+        # Add directory entries
+        for dir_path in sorted_dirs:
+            # Count files in this directory
+            dir_files_count = sum(1 for f in self.processed_files if os.path.dirname(f) == dir_path)
+            directories_table.append(
+                f"| 📁 `{dir_path}` | {dir_files_count} | {self.config.target_lang} |"
+            )
         
         # Add individual file entries
         for source_file, output_file in zip(self.processed_files, self.output_files):
-            translation_table.append(
+            files_table.append(
                 f"| `{source_file}` | `{output_file}` | {self.config.target_lang} |"
             )
+            
+        # Combine both tables
+        translation_table = directories_table + ["\n"] + files_table
         
         # Create the commit message with appropriate count
+        has_directories = any(os.path.isdir(p) for p in input_files if os.path.exists(p))
         if has_directories:
             # Count directories and files separately
             dir_count = sum(1 for p in input_files if os.path.exists(p) and os.path.isdir(p))
@@ -307,44 +330,71 @@ class TranslationWorkflow:
             f"Translated to {self.config.target_lang} - {summary} (Batch {self.current_batch}/{self.total_batches})\n\n"
             f"{statistics_section}"
             f"{progress_section}\n"
-            f"### 📁 File Summary\n"
             f"{''.join(f'{line}\n' for line in translation_table)}"
         )
         
         return commit_message, translation_table, pr_title
     
     def handle_git_operations(self, commit_message, translation_table, pr_title=None):
-        """Handle git operations: commit, push and create PR (if applicable)"""
+        """Handle git operations: commit, push and create/update PR
+        
+        For the first batch, creates a draft PR.
+        For subsequent batches, updates the existing PR.
+        For the final batch, marks the PR as ready for review.
+        """
         # Setup git configuration
         if not self.git_ops.setup_git():
             print("⚠️ Git setup failed, but continuing with local file operations")
+            return
+            
+        # First batch: create branch and initial commit
+        if self.current_batch == 1:
+            # Create a single branch for all batches
+            self.pr_branch_name = f"translation-{self.session_id}"
+            print(f"Creating branch: {self.pr_branch_name}")
         
-        # Commit changes and push to remote, get branch name if created
-        # Use batch number in branch name for uniqueness
-        batch_suffix = f"-batch-{self.current_batch}" if self.total_batches > 1 else ""
-        branch_name = self.git_ops.commit_and_push(self.output_files, commit_message, batch_suffix)
+        # Commit changes and push to remote
+        branch_name = self.git_ops.commit_and_push(self.output_files, commit_message, "", self.pr_branch_name)
         
-        # If branch was created and we have GitHub credentials, create PR
+        # If branch was created/updated and we have GitHub credentials
         if branch_name:
             if self.git_ops.github_token and self.git_ops.github_repository:
-                print("Creating pull request...")
                 # Use provided PR title or default from config
                 if pr_title is None:
                     pr_title = self.config.pr_title.strip()
-                    if self.total_batches > 1:
-                        pr_title = f"{pr_title} (Part {self.current_batch}/{self.total_batches})"
                 
                 # Use commit_message as the PR body
                 pr_body = commit_message.split('\n')
-                if self.git_ops.create_pull_request(branch_name, pr_title, pr_body):
-                    print(f"✅ Pull request created successfully for batch {self.current_batch}/{self.total_batches}")
-                else:
-                    print(f"⚠️ Failed to create pull request for batch {self.current_batch}/{self.total_batches}")
+                
+                # First batch: create draft PR
+                if self.current_batch == 1:
+                    print("Creating draft pull request...")
+                    self.pr_number = self.git_ops.create_pull_request(branch_name, pr_title, pr_body, draft=True)
+                    if self.pr_number:
+                        print(f"✅ Draft pull request #{self.pr_number} created successfully")
+                    else:
+                        print("⚠️ Failed to create draft pull request")
+                
+                # Subsequent batches: update existing PR
+                elif self.pr_number:
+                    print(f"Updating pull request #{self.pr_number}...")
+                    if self.git_ops.update_pull_request(self.pr_number, title=pr_title, body=commit_message):
+                        print(f"✅ Pull request #{self.pr_number} updated successfully")
+                    else:
+                        print(f"⚠️ Failed to update pull request #{self.pr_number}")
+                
+                # Final batch: mark PR as ready for review
+                if self.current_batch == self.total_batches and self.pr_number:
+                    print(f"Marking pull request #{self.pr_number} as ready for review...")
+                    if self.git_ops.mark_pr_ready_for_review(self.pr_number):
+                        print(f"✅ Pull request #{self.pr_number} marked as ready for review")
+                    else:
+                        print(f"⚠️ Failed to mark pull request #{self.pr_number} as ready for review")
             else:
-                print("ℹ️ Skipping PR creation: GitHub token or repository not available")
-                print(f"ℹ️ Branch '{branch_name}' has been pushed. You can create a PR manually.")
+                print("ℹ️ Skipping PR operations: GitHub token or repository not available")
+                print(f"ℹ️ Branch '{branch_name}' has been pushed. You can create/update a PR manually.")
         else:
-            print("ℹ️ No branch created or no changes to commit. Skipping PR creation.")
+            print("ℹ️ No branch created or no changes to commit. Skipping PR operations.")
     
     def _generate_session_id(self) -> str:
         """Generate a short unique session ID for this translation run"""
@@ -421,33 +471,22 @@ class TranslationWorkflow:
             
             # Display session ID and start time
             print(f"🆔 Translation session ID: {self.session_id}")
-            print(f"🕒 Started at: {start_time_str}")
-            
-            # Get input files
-            input_files = self.file_processor.get_input_files()
-            if not input_files:
-                print("❌ No input files specified or found")
-                return False
-            
-            # Collect all files to translate first
             all_files_to_translate = []
-            for input_path in input_files:
-                if not os.path.exists(input_path):
-                    self._handle_missing_path(input_path)
-                    continue
-                    
-                if os.path.isdir(input_path):
-                    files = self._process_directory(input_path)
-                    all_files_to_translate.extend(files)
-                else:
-                    all_files_to_translate.append(input_path)
+            
+            # Process input files from config
+            if self.config.input_files:
+                for input_path in self.config.input_files:
+                    files = self.process_input_path(input_path)
+                    if files:
+                        all_files_to_translate.extend(files)
             
             if not all_files_to_translate:
-                print("❌ No valid files found to translate")
+                print("❌ No files to translate. Check your input paths and file extensions.")
                 return False
+                
+            print(f"\n📋 Found {len(all_files_to_translate)} files to translate")
             
-            # Group files by directory
-            print("\n📁 Grouping files by directory structure...")
+            # Group files by directory for more efficient batch processing
             dir_groups = self._group_files_by_directory(all_files_to_translate)
             
             # Create batches based on directory groups
@@ -458,6 +497,7 @@ class TranslationWorkflow:
             self.total_batches = len(batches)
             self.all_batches = batches  # Store all batches for progress tracking
             print(f"\n📃 Created {self.total_batches} batch(es) from {len(all_files_to_translate)} files")
+            print(f"\n🔄 Using single PR workflow: Will create one draft PR and update it with each batch")
             
             # Process each batch
             for batch_index, batch_files in enumerate(batches):
@@ -516,6 +556,9 @@ class TranslationWorkflow:
             print(f"    - Total time: {time_format}")
             print(f"    - Average time per file: {workflow_elapsed_time / total_files_processed:.2f} seconds")
             print(f"    - Average time per batch: {workflow_elapsed_time / self.total_batches:.2f} seconds")
+            
+            if self.pr_number:
+                print(f"  🔗 Pull request: #{self.pr_number} (now ready for review)")
             
             end_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"  🕒 Finished at: {end_time_str}")

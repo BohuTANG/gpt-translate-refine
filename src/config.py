@@ -20,7 +20,7 @@ class Config:
     target_lang: str = field(default_factory=lambda: os.getenv('TARGET_LANG', 'Simplified-Chinese'))
     temperature: float = field(default_factory=lambda: float(os.getenv('TEMPERATURE', '0.3')))
     pr_title: str = field(default_factory=lambda: os.getenv('PR_TITLE', 'Add LLM Translations V3'))
-    batch_size: int = field(default_factory=lambda: int(os.getenv('BATCH_SIZE', '20')))
+    batch_size: int = field(default_factory=lambda: int(os.getenv('BATCH_SIZE', '4')))
     
     # Refinement settings
     refine_enabled: bool = field(default_factory=lambda: os.getenv('REFINE_ENABLED', 'true').lower() == 'true')

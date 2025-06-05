@@ -124,11 +124,6 @@ class TranslationWorkflow:
                 print(f"Error: Translation failed for: {file_path}")
                 return
             
-            # Print the first translation result
-            print("\n=== First Translation Result ===\n")
-            print(translated_content)
-            print("\n==============================\n")
-            
             # Apply refinement if enabled
             if self.config.refine_enabled:
                 translated_content = self._refine_translation(translated_content, content)
@@ -170,7 +165,7 @@ class TranslationWorkflow:
             return translated_content
         
         # Show diff between original translation and refined translation
-        TextUtils.show_diff(translated_content, refined_content)
+        # TextUtils.show_diff(translated_content, refined_content)
         print("✅ Refinement applied successfully")
         
         return refined_content

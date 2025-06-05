@@ -418,7 +418,8 @@ class GitOperations:
             url = f"{self.github_api_url}/repos/{owner}/{repo}/pulls/{pr_number}"
             headers = {
                 'Authorization': f'token {self.github_token}',
-                'Accept': 'application/vnd.github.v3+json'
+                'Accept': 'application/vnd.github.v3+json',
+                'X-GitHub-Api-Version': '2022-11-28'  # 使用最新的 GitHub API 版本
             }
             
             # Set draft to false to mark as ready for review
@@ -427,7 +428,18 @@ class GitOperations:
             }
             
             print(f"  🛠️ Making API request to {url}")
+            print(f"  💬 Request headers: {headers}")
+            print(f"  💬 Request body: {data}")
+            
             response = requests.patch(url, headers=headers, json=data)
+            
+            # 打印完整的响应信息，帮助调试
+            print(f"  💬 Response status code: {response.status_code}")
+            print(f"  💬 Response headers: {response.headers}")
+            try:
+                print(f"  💬 Response body: {response.json()}")
+            except:
+                print(f"  💬 Response text: {response.text}")
             
             if response.status_code in (200, 201):
                 print(f"  ✅ Pull request #{pr_number} marked as ready for review (Status: {response.status_code})")

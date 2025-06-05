@@ -172,7 +172,7 @@ class TranslationWorkflow:
     
     def prepare_commit_message(self, input_files):
         """Prepare commit message and PR title with translation details for a single file"""
-        # Create a table for the translated file
+        # Create a table for all translated files
         files_table = [
             "### 📄 Translated Files",
             "| **Source** | **Output** | **Language** |",
@@ -184,10 +184,34 @@ class TranslationWorkflow:
         if self.processed_files:
             dir_path = os.path.dirname(self.processed_files[0])
         
-        # Add file entry
+        # Add current file entry
         if self.processed_files and self.output_files:  # Ensure we have both source and output files
             source_file = self.processed_files[0]
             output_file = self.output_files[0]
+            
+            # Add to all_processed_files if not already there
+            if source_file not in self.all_processed_files:
+                self.all_processed_files.append(source_file)
+        
+        # Add all processed files to the table
+        processed_pairs = []
+        for source_file in self.all_processed_files:
+            # Generate the corresponding output file path
+            if self.config.output_files:
+                # If explicit output mapping is provided
+                output_idx = next((i for i, f in enumerate(self.config.input_files) if f == source_file), None)
+                if output_idx is not None and output_idx < len(self.config.output_files):
+                    output_file = self.config.output_files[output_idx]
+                else:
+                    output_file = source_file.replace(os.path.dirname(source_file), dir_path)
+            else:
+                # Default behavior - replace input directory with output directory
+                output_file = source_file.replace(os.path.dirname(source_file), dir_path)
+            
+            processed_pairs.append((source_file, output_file))
+        
+        # Add all processed files to the table
+        for source_file, output_file in processed_pairs:
             files_table.append(
                 f"| `{source_file}` | `{output_file}` | {self.config.target_lang} |"
             )

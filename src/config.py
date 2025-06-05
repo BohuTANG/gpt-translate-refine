@@ -52,13 +52,16 @@ class Config:
         prompt_text = os.getenv(env_name, '')
         prompt_path = Path(prompt_text)
         
+        # If the prompt text is a valid file path, read from file
         if prompt_path.is_file():
             try:
-                return prompt_path.read_text(encoding='utf-8').strip()
+                return prompt_path.read_text(encoding='utf-8')
             except Exception as e:
-                print(f"Warning: Could not read prompt file {prompt_text}: {e}")
-        
+                print(f"Warning: Could not read prompt from file {prompt_text}: {e}")
+                return prompt_text
         return prompt_text
+    
+
     
     def print_config(self) -> None:
         """Print current configuration"""

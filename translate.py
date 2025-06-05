@@ -475,7 +475,10 @@ class TranslationWorkflow:
             
             # Process input files from config
             if self.config.input_files:
-                for input_path in self.config.input_files:
+                # Split input paths by comma if multiple paths are provided
+                input_paths = [p.strip() for p in self.config.input_files.split(',') if p.strip()]
+                for input_path in input_paths:
+                    print(f"Processing input path: {input_path}")
                     files = self.process_input_path(input_path)
                     if files:
                         all_files_to_translate.extend(files)

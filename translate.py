@@ -359,18 +359,24 @@ class TranslationWorkflow:
         For subsequent batches, updates the existing PR.
         For the final batch, marks the PR as ready for review.
         """
+        print(f"\n📊 Git Operations - Batch {self.current_batch}/{self.total_batches}")
+        print(f"  📁 Files in this batch: {len(self.output_files)}")
+        
         # Setup git configuration
         if not self.git_ops.setup_git():
-            print("⚠️ Git setup failed, but continuing with local file operations")
+            print("  ⚠️ Git setup failed, but continuing with local file operations")
             return
             
         # First batch: create branch and initial commit
         if self.current_batch == 1:
             # Create a single branch for all batches
             self.pr_branch_name = f"translation-{self.session_id}"
-            print(f"Creating branch: {self.pr_branch_name}")
+            print(f"  🌿 Creating branch: {self.pr_branch_name}")
+        else:
+            print(f"  🔄 Using existing branch: {self.pr_branch_name}")
         
         # Commit changes and push to remote
+        print(f"  📝 Committing {len(self.output_files)} translated files...")
         branch_name = self.git_ops.commit_and_push(self.output_files, commit_message, "", self.pr_branch_name)
         
         # If branch was created/updated and we have GitHub credentials
@@ -379,39 +385,57 @@ class TranslationWorkflow:
                 # Use provided PR title or default from config
                 if pr_title is None:
                     pr_title = self.config.pr_title.strip()
+                    print(f"  📋 Using default PR title: {pr_title}")
+                else:
+                    print(f"  📋 Using batch-specific PR title: {pr_title}")
                 
                 # Use commit_message as the PR body
                 pr_body = commit_message.split('\n')
+                print(f"  📄 PR body contains {len(pr_body)} lines with translation details")
                 
                 # First batch: create draft PR
                 if self.current_batch == 1:
-                    print("Creating draft pull request...")
+                    print("  🔄 Creating draft pull request...")
                     self.pr_number = self.git_ops.create_pull_request(branch_name, pr_title, pr_body, draft=True)
                     if self.pr_number:
-                        print(f"✅ Draft pull request #{self.pr_number} created successfully")
+                        print(f"  ✅ Draft pull request #{self.pr_number} created successfully")
                     else:
-                        print("⚠️ Failed to create draft pull request")
+                        print("  ⚠️ Failed to create draft pull request")
                 
                 # Subsequent batches: update existing PR
                 elif self.pr_number:
-                    print(f"Updating pull request #{self.pr_number}...")
+                    print(f"  🔄 Updating pull request #{self.pr_number} with new translations...")
                     if self.git_ops.update_pull_request(self.pr_number, title=pr_title, body=commit_message):
-                        print(f"✅ Pull request #{self.pr_number} updated successfully")
+                        print(f"  ✅ Pull request #{self.pr_number} updated successfully with batch {self.current_batch} translations")
                     else:
-                        print(f"⚠️ Failed to update pull request #{self.pr_number}")
+                        print(f"  ⚠️ Failed to update pull request #{self.pr_number}")
                 
                 # Final batch: mark PR as ready for review
                 if self.current_batch == self.total_batches and self.pr_number:
-                    print(f"Marking pull request #{self.pr_number} as ready for review...")
+                    print(f"\n🏁 Final batch completed! Marking pull request #{self.pr_number} as ready for review...")
                     if self.git_ops.mark_pr_ready_for_review(self.pr_number):
-                        print(f"✅ Pull request #{self.pr_number} marked as ready for review")
+                        print(f"  ✅ Pull request #{self.pr_number} marked as ready for review")
+                        print(f"  🎉 Translation workflow completed successfully!")
                     else:
-                        print(f"⚠️ Failed to mark pull request #{self.pr_number} as ready for review")
+                        print(f"  ⚠️ Failed to mark pull request #{self.pr_number} as ready for review")
+                        print(f"  ℹ️ You may need to manually mark the PR as ready for review")
             else:
-                print("ℹ️ Skipping PR operations: GitHub token or repository not available")
-                print(f"ℹ️ Branch '{branch_name}' has been pushed. You can create/update a PR manually.")
+                print("  ℹ️ Skipping PR operations: GitHub token or repository not available")
+                print(f"  ℹ️ Branch '{branch_name}' has been pushed. You can create/update a PR manually.")
         else:
-            print("ℹ️ No branch created or no changes to commit. Skipping PR operations.")
+            print("  ℹ️ No branch created or no changes to commit. Skipping PR operations.")
+            
+        # Print batch completion message
+        if self.current_batch < self.total_batches:
+            print(f"\n✅ Batch {self.current_batch}/{self.total_batches} completed. Moving to next batch...")
+        else:
+            print(f"\n🎉 All {self.total_batches} batches completed successfully!")
+            print(f"   Total files translated: {len(self.processed_files)}")
+            if self.pr_number:
+                print(f"   PR #{self.pr_number} contains all translations")
+            else:
+                print(f"   All files translated locally (no PR created)")
+        print("="*60)
     
     def _generate_session_id(self) -> str:
         """Generate a short unique session ID for this translation run"""
@@ -456,14 +480,14 @@ class TranslationWorkflow:
             
             # If this directory alone exceeds batch_size but current batch is empty,
             # make this directory its own batch (keep directory together)
-            if dir_size > self.config.batch_size and current_batch_size == 0:
+            if dir_size > self.config.batch_size_per_commit and current_batch_size == 0:
                 batches.append(files)
                 print(f"  📂 Directory '{dir_name}' with {dir_size} files will be its own batch")
                 continue
                 
             # If adding this directory would exceed batch_size and we already have files,
             # finalize current batch and start a new one
-            if current_batch_size + dir_size > self.config.batch_size and current_batch_size > 0:
+            if current_batch_size + dir_size > self.config.batch_size_per_commit and current_batch_size > 0:
                 batches.append(current_batch)
                 current_batch = []
                 current_batch_size = 0

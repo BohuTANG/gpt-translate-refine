@@ -77,6 +77,8 @@ jobs:
 
 ### Git Options
 - `pr_title`: Custom PR title (default: **Add LLM Translations V3**).
+- `batch_size_per_commit`: Number of files to process in each commit batch (default: **2**).
+- `batch_size`: [DEPRECATED: Use batch_size_per_commit instead] Number of files to process in each batch.
 
 ## 🔑 Setting Up the API Key
 - Go to **Settings** → **Secrets and Variables** → **Actions** in your repository.

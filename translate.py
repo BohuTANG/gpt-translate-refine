@@ -278,6 +278,20 @@ class TranslationWorkflow:
         # We already setup git at the beginning of the run, but we'll check branch status
         print(f"  🔄 Using branch: {self.pr_branch_name}")
         
+        # Print detailed commit message information
+        print(f"  📝 Commit details:")
+        print(f"    - File: {os.path.basename(self.processed_files[0]) if self.processed_files else 'Unknown'}")
+        print(f"    - Progress: File {self.current_file_index} of {self.total_files} ({(self.current_file_index/self.total_files*100):.1f}%)")
+        
+        # Print commit message preview
+        print(f"    - Commit message preview:")
+        commit_lines = commit_message.split('\n')
+        for i, line in enumerate(commit_lines[:5]):
+            if line.strip():
+                print(f"      {line[:70]}{'...' if len(line) > 70 else ''}")
+        if len(commit_lines) > 5:
+            print(f"      ... ({len(commit_lines) - 5} more lines)")
+            
         # Commit changes and push to remote
         print(f"  📝 Committing translated file...")
         branch_name = self.git_ops.commit_and_push(self.output_files, commit_message, self.pr_branch_name)

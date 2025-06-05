@@ -232,9 +232,6 @@ class TranslationWorkflow:
         if dir_path:
             commit_message.append(f"\nDirectory: `{dir_path}`")
         
-        # Add file table
-        commit_message.extend(["", *files_table])
-        
         # Get token statistics from translator
         token_stats = self.translator.get_statistics()
         input_tokens = token_stats['input_tokens']
@@ -276,6 +273,9 @@ class TranslationWorkflow:
             f"- Start Time: {start_time_str}",
             f"- End Time: {end_time_str}"
         ])
+        
+        # Add file table after statistics
+        commit_message.extend(["", *files_table])
         
         # Join all lines with newlines
         commit_message = "\n".join(commit_message)
@@ -340,20 +340,37 @@ class TranslationWorkflow:
                 pr_body = commit_message.split('\n')
                 print(f"  📄 PR body contains {len(pr_body)} lines with translation details")
                 
-                # First file: create draft PR with [DRAFT] prefix in title
+                # First file: create PR (draft if more than one file)
                 if self.current_file_index == 1:
-                    print("  🔄 Creating draft pull request...")
-                    # Ensure PR title has [DRAFT] prefix for first file
-                    if not pr_title.startswith("[DRAFT] "):
-                        pr_title = f"[DRAFT] {pr_title}"
-                    print(f"  📋 Draft PR title: {pr_title}")
+                    # If this is the only file (current=1, total=1), create a regular PR
+                    # Otherwise create a draft PR with [DRAFT] prefix
+                    is_draft = self.total_files > 1
                     
-                    self.pr_number = self.git_ops.create_pull_request(branch_name, pr_title, pr_body, draft=True)
+                    if is_draft:
+                        print("  🔄 Creating draft pull request...")
+                        # Ensure PR title has [DRAFT] prefix for draft PRs
+                        if not pr_title.startswith("[DRAFT] "):
+                            pr_title = f"[DRAFT] {pr_title}"
+                        print(f"  📋 Draft PR title: {pr_title}")
+                    else:
+                        print("  🔄 Creating pull request...")
+                        # Ensure PR title doesn't have [DRAFT] prefix for non-draft PRs
+                        if pr_title.startswith("[DRAFT] "):
+                            pr_title = pr_title.replace("[DRAFT] ", "")
+                        print(f"  📋 PR title: {pr_title}")
+                    
+                    self.pr_number = self.git_ops.create_pull_request(branch_name, pr_title, pr_body, draft=is_draft)
                     if self.pr_number:
-                        print(f"  ✅ Draft pull request #{self.pr_number} created successfully")
+                        if is_draft:
+                            print(f"  ✅ Draft pull request #{self.pr_number} created successfully")
+                        else:
+                            print(f"  ✅ Pull request #{self.pr_number} created successfully")
                         print(f"  🔗 PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
                     else:
-                        print("  ⚠️ Failed to create draft pull request")
+                        if is_draft:
+                            print("  ⚠️ Failed to create draft pull request")
+                        else:
+                            print("  ⚠️ Failed to create pull request")
             
                 # Subsequent files: update existing PR (keep [DRAFT] prefix until final file)
                 elif self.pr_number:

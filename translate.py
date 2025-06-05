@@ -83,6 +83,31 @@ class TranslationWorkflow:
     def _translate_file(self, file_path):
         """Translate a single file"""
         try:
+            # Calculate current progress in batch
+            current_file_index = len(self.processed_files) + 1
+            total_files_in_batch = len(self.current_batch_files)
+            progress_percent = (current_file_index / total_files_in_batch) * 100
+            
+            # Display progress information
+            print(f"\n📄 Processing file {current_file_index}/{total_files_in_batch} ({progress_percent:.1f}%)")
+            print(f"  🔄 File: {file_path}")
+            
+            # If we have processed files, show elapsed time and estimated time remaining
+            if len(self.processed_files) > 0:
+                elapsed_time = time.time() - self.batch_start_time
+                avg_time_per_file = elapsed_time / len(self.processed_files)
+                remaining_files = total_files_in_batch - current_file_index
+                estimated_time_remaining = avg_time_per_file * remaining_files
+                
+                # Format time remaining
+                if estimated_time_remaining > 60:
+                    minutes, seconds = divmod(estimated_time_remaining, 60)
+                    time_remaining = f"{int(minutes)}m {int(seconds)}s"
+                else:
+                    time_remaining = f"{estimated_time_remaining:.1f}s"
+                    
+                print(f"  ⏱️ Elapsed: {elapsed_time:.1f}s, Estimated remaining: {time_remaining}")
+            
             start_time = time.time()
             print(f"\n📄 Translating file: {file_path}")
             
@@ -368,8 +393,9 @@ class TranslationWorkflow:
                 self.processed_files = []
                 self.output_files = []
                 self.directory_files_map = {}
+                self.current_batch_files = batch_files  # Store current batch files for progress tracking
                 
-                batch_start_time = time.time()
+                self.batch_start_time = time.time()  # Store batch start time for progress tracking
                 batch_start_str = datetime.datetime.now().strftime("%H:%M:%S")
                 print(f"\n✨ Processing batch {self.current_batch}/{self.total_batches} with {len(batch_files)} files")
                 print(f"  🕒 Batch started at: {batch_start_str}")
@@ -380,7 +406,7 @@ class TranslationWorkflow:
                 
                 # Calculate batch statistics
                 batch_files_count = len(self.processed_files)
-                batch_elapsed_time = time.time() - batch_start_time
+                batch_elapsed_time = time.time() - self.batch_start_time
                 avg_time_per_file = batch_elapsed_time / batch_files_count if batch_files_count > 0 else 0
                 
                 # If files were processed in this batch, handle git operations

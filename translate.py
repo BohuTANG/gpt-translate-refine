@@ -392,7 +392,7 @@ class TranslationWorkflow:
                     print(f"    - Average time per file: {avg_time_per_file:.2f} seconds")
                     
                     # Prepare commit message and PR title
-                    commit_message, translation_table, pr_title = self.prepare_commit_message()
+                    commit_message, translation_table, pr_title = self.prepare_commit_message(batch_files)
                     
                     # Handle git operations for this batch
                     self.handle_git_operations(commit_message, translation_table, pr_title)

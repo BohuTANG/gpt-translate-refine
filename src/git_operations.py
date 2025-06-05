@@ -396,7 +396,7 @@ class GitOperations:
             return False
     
     def mark_pr_ready_for_review(self, pr_number: int) -> bool:
-        """Mark a pull request as ready for review
+        """Mark a pull request as ready for review using GitHub CLI
         
         Args:
             pr_number: PR number to mark as ready
@@ -404,22 +404,40 @@ class GitOperations:
         Returns:
             True if successful, False otherwise
         """
-        if not self.in_github_actions or not self.github_token or not self.github_repository:
-            print("🔄 Not running in GitHub Actions or missing credentials, skipping PR update")
+        if not self.in_github_actions:
+            print("🔄 Not running in GitHub Actions, skipping PR ready for review")
             return False
             
         try:
-            # Extract owner and repo from GITHUB_REPOSITORY
-            owner, repo = self.github_repository.split('/')
+            # 确保 GitHub CLI 已经安装并配置
+            # GitHub Actions 环境中已预装 gh CLI
+            print(f"🚀 Marking PR #{pr_number} as ready for review using GitHub CLI...")
             
-            print(f"🚀 Marking PR #{pr_number} as ready for review...")
+            # 使用 GitHub CLI 将 PR 标记为 ready for review
+            # 这是 GitHub Actions 环境中最可靠的方法
+            code, stdout, stderr = self.run_command(['gh', 'pr', 'ready', str(pr_number)])
             
+            if code == 0:
+                print(f"  ✅ Pull request #{pr_number} marked as ready for review successfully")
+                if stdout.strip():
+                    print(f"  💬 Output: {stdout.strip()}")
+                return True
+            else:
+                print(f"  ❌ Failed to mark PR as ready for review: {stderr}")
+                return False
+        except Exception as e:
+            print(f"  ❌ Error marking PR as ready for review: {e}")
+            return False
+            
+    def _mark_ready_using_rest_api(self, owner: str, repo: str, pr_number: int) -> bool:
+        """Try to mark PR as ready for review using REST API"""
+        try:
             # Ready for review endpoint - using PATCH to update draft status
             url = f"{self.github_api_url}/repos/{owner}/{repo}/pulls/{pr_number}"
             headers = {
                 'Authorization': f'token {self.github_token}',
                 'Accept': 'application/vnd.github.v3+json',
-                'X-GitHub-Api-Version': '2022-11-28'  # 使用最新的 GitHub API 版本
+                'X-GitHub-Api-Version': '2022-11-28'
             }
             
             # Set draft to false to mark as ready for review
@@ -427,36 +445,107 @@ class GitOperations:
                 'draft': False
             }
             
-            print(f"  🛠️ Making API request to {url}")
-            print(f"  💬 Request headers: {headers}")
-            print(f"  💬 Request body: {data}")
-            
+            print(f"  🛠️ Making REST API request to {url}")
             response = requests.patch(url, headers=headers, json=data)
             
-            # 打印完整的响应信息，帮助调试
-            print(f"  💬 Response status code: {response.status_code}")
-            print(f"  💬 Response headers: {response.headers}")
-            try:
-                print(f"  💬 Response body: {response.json()}")
-            except:
-                print(f"  💬 Response text: {response.text}")
-            
             if response.status_code in (200, 201):
-                print(f"  ✅ Pull request #{pr_number} marked as ready for review (Status: {response.status_code})")
-                
-                # Try to extract PR URL from response
-                try:
-                    pr_data = response.json()
-                    pr_url = pr_data.get('html_url', '')
-                    if pr_url:
-                        print(f"  🔗 PR URL: {pr_url}")
-                except Exception as e:
-                    print(f"  ⚠️ Could not extract PR URL from response: {e}")
-                    
+                print(f"  ✅ REST API: Pull request #{pr_number} marked as ready for review (Status: {response.status_code})")
                 return True
             else:
-                print(f"  ❌ Error marking PR as ready for review: {response.status_code} - {response.text}")
+                print(f"  ❌ REST API failed: {response.status_code} - {response.text}")
                 return False
         except Exception as e:
-            print(f"  ❌ Error marking PR as ready for review: {e}")
+            print(f"  ❌ REST API error: {e}")
+            return False
+            
+    def _mark_ready_using_graphql_api(self, owner: str, repo: str, pr_number: int) -> bool:
+        """Try to mark PR as ready for review using GraphQL API"""
+        try:
+            # GraphQL endpoint
+            url = "https://api.github.com/graphql"
+            headers = {
+                'Authorization': f'bearer {self.github_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # First, get the PR node ID
+            query_pr = f"""
+            query {{
+              repository(owner: "{owner}", name: "{repo}") {{
+                pullRequest(number: {pr_number}) {{
+                  id
+                }}
+              }}
+            }}
+            """
+            
+            print(f"  🛠️ Getting PR node ID using GraphQL")
+            response = requests.post(url, headers=headers, json={'query': query_pr})
+            
+            if response.status_code != 200:
+                print(f"  ❌ GraphQL query failed: {response.status_code} - {response.text}")
+                return False
+                
+            data = response.json()
+            if 'errors' in data:
+                print(f"  ❌ GraphQL errors: {data['errors']}")
+                return False
+                
+            pr_id = data.get('data', {}).get('repository', {}).get('pullRequest', {}).get('id')
+            if not pr_id:
+                print(f"  ❌ Could not get PR node ID")
+                return False
+                
+            # Now mark the PR as ready for review
+            ready_mutation = f"""
+            mutation {{
+              markPullRequestReadyForReview(input: {{pullRequestId: "{pr_id}"}}) {{
+                pullRequest {{
+                  number
+                  url
+                }}
+              }}
+            }}
+            """
+            
+            print(f"  🛠️ Marking PR as ready using GraphQL mutation")
+            response = requests.post(url, headers=headers, json={'query': ready_mutation})
+            
+            if response.status_code != 200:
+                print(f"  ❌ GraphQL mutation failed: {response.status_code} - {response.text}")
+                return False
+                
+            data = response.json()
+            if 'errors' in data:
+                print(f"  ❌ GraphQL mutation errors: {data['errors']}")
+                return False
+                
+            pr_url = data.get('data', {}).get('markPullRequestReadyForReview', {}).get('pullRequest', {}).get('url')
+            if pr_url:
+                print(f"  ✅ GraphQL API: Pull request #{pr_number} marked as ready for review")
+                print(f"  🔗 PR URL: {pr_url}")
+                return True
+            else:
+                print(f"  ❌ GraphQL mutation did not return PR URL")
+                return False
+        except Exception as e:
+            print(f"  ❌ GraphQL API error: {e}")
+            return False
+            
+    def _mark_ready_using_gh_cli(self, pr_number: int) -> bool:
+        """Try to mark PR as ready for review using GitHub CLI"""
+        try:
+            print(f"  🛠️ Attempting to use 'gh pr ready {pr_number}' command")
+            code, stdout, stderr = self.run_command(['gh', 'pr', 'ready', str(pr_number)])
+            
+            if code == 0:
+                print(f"  ✅ GitHub CLI: Pull request #{pr_number} marked as ready for review")
+                if stdout.strip():
+                    print(f"  💬 CLI output: {stdout.strip()}")
+                return True
+            else:
+                print(f"  ❌ GitHub CLI failed: {stderr}")
+                return False
+        except Exception as e:
+            print(f"  ❌ GitHub CLI error: {e}")
             return False

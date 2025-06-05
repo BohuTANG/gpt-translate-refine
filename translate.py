@@ -282,25 +282,16 @@ class TranslationWorkflow:
         
         # Create PR title with directory information
         # Extract directory name for PR title
-        directory_name = "files"
         if dir_path:
-            # Get the last directory component for cleaner PR titles
-            directory_parts = dir_path.split('/')
-            if len(directory_parts) > 0:
-                # Use the last non-empty directory name
-                for part in reversed(directory_parts):
-                    if part.strip():
-                        directory_name = part
-                        break
+            # Get the last directory name from the path
+            directory_name = os.path.basename(dir_path)
         
-        # Always add DRAFT prefix to PR title until the last file is processed
-        # The [DRAFT] prefix will be removed when marking PR ready for review
+        # Add DRAFT prefix to PR title only if not the last file
         if self.current_file_index < self.total_files:
             pr_title = f"[DRAFT] AI Translate {directory_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
         else:
-            # For the last file, we'll remove the DRAFT prefix when marking PR ready for review
-            # But we still create it with DRAFT prefix initially
-            pr_title = f"[DRAFT] AI Translate {directory_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
+            # For the last file, don't add DRAFT prefix
+            pr_title = f"AI Translate {directory_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
         
         return commit_message, files_table, pr_title
     
@@ -373,24 +364,14 @@ class TranslationWorkflow:
                     else:
                         print(f"  ⚠️ Failed to update pull request #{self.pr_number}")
                 
-                # Final file: mark PR as ready for review and remove DRAFT from title
+                # Final file: mark PR as ready for review
                 if self.current_file_index == self.total_files and self.pr_number:
                     print(f"\n🏁 Final file completed! Finalizing pull request #{self.pr_number}...")
                     
-                    # Remove [DRAFT] prefix from PR title if present
-                    if pr_title and "[DRAFT]" in pr_title:
-                        final_pr_title = pr_title.replace("[DRAFT] ", "")
-                        print(f"  📋 Updating PR title: {pr_title} → {final_pr_title}")
-                        
-                        # Update PR with final title
-                        if self.git_ops.update_pull_request(self.pr_number, title=final_pr_title):
-                            print(f"  ✅ Pull request title updated successfully to: {final_pr_title}")
-                            # Store the updated title for later reference
-                            pr_title = final_pr_title
-                        else:
-                            print(f"  ⚠️ Failed to update pull request title")
+                    # PR title should already be without [DRAFT] prefix from prepare_commit_message
+                    print(f"  📋 Final PR title: {pr_title}")
                     
-                    # Mark PR as ready for review
+                    # Mark PR as ready for review using GitHub CLI
                     print(f"  🔄 Marking PR as ready for review...")
                     if self.git_ops.mark_pr_ready_for_review(self.pr_number):
                         print(f"  ✅ Pull request #{self.pr_number} marked as ready for review")

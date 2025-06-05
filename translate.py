@@ -2,6 +2,10 @@
 
 import os
 import sys
+import traceback
+import math
+import uuid
+import time
 from typing import List, Dict, Tuple
 
 from src.config import Config
@@ -23,6 +27,13 @@ class TranslationWorkflow:
         self.processed_files = []
         self.output_files = []
         self.directory_files_map = {}
+        
+        # Batch processing tracking
+        self.current_batch = 0
+        self.total_batches = 0
+        
+        # Generate a unique session ID for this translation run
+        self.session_id = self._generate_session_id()
     
     def process_input_path(self, input_path):
         """Process a single input path (file or directory)"""
@@ -170,69 +181,127 @@ class TranslationWorkflow:
             file_count = len(self.processed_files)
             summary = f"{file_count} file{'s' if file_count > 1 else ''}"
 
-        # Get PR title directly from config (no modifications)
-        pr_title = self.config.pr_title.strip()
+        # Add batch information and unique ID to PR title
+        base_pr_title = self.config.pr_title.strip()
+        if self.total_batches > 1:
+            pr_title = f"{base_pr_title} [ID:{self.session_id}] (Part {self.current_batch}/{self.total_batches})"
+        else:
+            pr_title = f"{base_pr_title} [ID:{self.session_id}]"
         
         # Format the complete commit message (used for commit and PR body)
         commit_message = (
-            f"## ✅ Translated to {self.config.target_lang} - {summary}\n\n"
+            f"## ✅ Translated to {self.config.target_lang} - {summary} (Batch {self.current_batch}/{self.total_batches})\n\n"
+            f"Session ID: {self.session_id}\n\n"
             f"{''.join(f'{line}\n' for line in translation_table)}"
         )
         
-        return commit_message, translation_table
+        return commit_message, translation_table, pr_title
     
-    def handle_git_operations(self, commit_message, translation_table):
+    def handle_git_operations(self, commit_message, translation_table, pr_title=None):
         """Handle git operations: commit, push and create PR (if applicable)"""
         # Setup git configuration
         if not self.git_ops.setup_git():
             print("⚠️ Git setup failed, but continuing with local file operations")
         
         # Commit changes and push to remote, get branch name if created
-        branch_name = self.git_ops.commit_and_push(self.output_files, commit_message)
+        # Use batch number in branch name for uniqueness
+        batch_suffix = f"-batch-{self.current_batch}" if self.total_batches > 1 else ""
+        branch_name = self.git_ops.commit_and_push(self.output_files, commit_message, batch_suffix)
         
         # If branch was created and we have GitHub credentials, create PR
         if branch_name:
             if self.git_ops.github_token and self.git_ops.github_repository:
                 print("Creating pull request...")
-                # Use pr_title from config as the PR title
-                pr_title = self.config.pr_title.strip()
+                # Use provided PR title or default from config
+                if pr_title is None:
+                    pr_title = self.config.pr_title.strip()
+                    if self.total_batches > 1:
+                        pr_title = f"{pr_title} (Part {self.current_batch}/{self.total_batches})"
+                
                 # Use commit_message as the PR body
                 pr_body = commit_message.split('\n')
                 if self.git_ops.create_pull_request(branch_name, pr_title, pr_body):
-                    print("✅ Pull request created successfully")
+                    print(f"✅ Pull request created successfully for batch {self.current_batch}/{self.total_batches}")
                 else:
-                    print("⚠️ Failed to create pull request")
+                    print(f"⚠️ Failed to create pull request for batch {self.current_batch}/{self.total_batches}")
             else:
                 print("ℹ️ Skipping PR creation: GitHub token or repository not available")
                 print(f"ℹ️ Branch '{branch_name}' has been pushed. You can create a PR manually.")
         else:
             print("ℹ️ No branch created or no changes to commit. Skipping PR creation.")
     
+    def _generate_session_id(self) -> str:
+        """Generate a short unique session ID for this translation run"""
+        # Use timestamp and random component to create a short but unique ID
+        timestamp = int(time.time()) % 10000  # Last 4 digits of timestamp
+        random_part = uuid.uuid4().hex[:3]    # 3 characters from UUID
+        return f"{timestamp}{random_part}"  # Format: 1234abc
+    
     def run(self):
-        """Run the complete translation workflow"""
+        """Run the complete translation workflow with batch processing"""
         try:
+            # Display session ID at the start
+            print(f"🆔 Translation session ID: {self.session_id}")
+            
             # Get input files
             input_files = self.file_processor.get_input_files()
             if not input_files:
                 print("❌ No input files specified or found")
                 return False
             
-            # Process each input path
+            # Collect all files to translate first
+            all_files_to_translate = []
             for input_path in input_files:
-                self.process_input_path(input_path)
+                if not os.path.exists(input_path):
+                    self._handle_missing_path(input_path)
+                    continue
+                    
+                if os.path.isdir(input_path):
+                    files = self._process_directory(input_path)
+                    all_files_to_translate.extend(files)
+                else:
+                    all_files_to_translate.append(input_path)
             
-            # Exit if no files were processed
-            if not self.processed_files:
-                print("❌ No files were processed")
+            if not all_files_to_translate:
+                print("❌ No valid files found to translate")
                 return False
+                
+            # Calculate batches
+            batch_size = self.config.batch_size
+            self.total_batches = math.ceil(len(all_files_to_translate) / batch_size)
+            print(f"📦 Processing {len(all_files_to_translate)} files in {self.total_batches} batches (batch size: {batch_size})")
             
-            print(f"✅ Successfully translated {len(self.processed_files)} files")
-            
-            # Prepare commit message and PR title
-            commit_message, translation_table = self.prepare_commit_message(input_files)
-            
-            # Handle git operations
-            self.handle_git_operations(commit_message, translation_table)
+            # Process files in batches
+            for batch_index in range(self.total_batches):
+                self.current_batch = batch_index + 1  # 1-based indexing for display
+                
+                # Reset tracking for this batch
+                self.processed_files = []
+                self.output_files = []
+                
+                # Get files for this batch
+                start_idx = batch_index * batch_size
+                end_idx = min(start_idx + batch_size, len(all_files_to_translate))
+                batch_files = all_files_to_translate[start_idx:end_idx]
+                
+                print(f"\n📋 Processing batch {self.current_batch}/{self.total_batches} with {len(batch_files)} files")
+                
+                # Process each file in this batch
+                for file_path in batch_files:
+                    self._translate_file(file_path)
+                
+                # Exit if no files were processed in this batch
+                if not self.processed_files:
+                    print(f"⚠️ No files were processed in batch {self.current_batch}")
+                    continue
+                
+                print(f"✅ Successfully translated {len(self.processed_files)} files in batch {self.current_batch}/{self.total_batches}")
+                
+                # Prepare commit message and PR title for this batch
+                commit_message, translation_table, pr_title = self.prepare_commit_message(input_files)
+                
+                # Handle git operations for this batch
+                self.handle_git_operations(commit_message, translation_table, pr_title)
             
             return True
             

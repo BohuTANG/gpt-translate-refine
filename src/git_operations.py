@@ -99,7 +99,7 @@ class GitOperations:
             print(f"Error setting up Git: {e}")
             return False
     
-    def commit_and_push(self, output_files: List[str], commit_message: str) -> Optional[str]:
+    def commit_and_push(self, output_files: List[str], commit_message: str, batch_suffix: str = "") -> Optional[str]:
         """Commit changes and push to remote, return branch name if created"""
         if not self.in_github_actions:
             print("Not running in GitHub Actions, skipping commit and push")
@@ -121,8 +121,8 @@ class GitOperations:
                 print("No changes to commit")
                 return None
             
-            # Create a new branch for the PR
-            branch_name = f"translation-{uuid.uuid4().hex[:8]}"
+            # Create a new branch for the PR with optional batch suffix
+            branch_name = f"translation{batch_suffix}-{uuid.uuid4().hex[:8]}"
             
             # Create and checkout branch
             code, _, stderr = self.run_command(['git', 'checkout', '-b', branch_name])

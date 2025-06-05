@@ -20,13 +20,6 @@ class Config:
     target_lang: str = field(default_factory=lambda: os.getenv('TARGET_LANG', 'Simplified-Chinese'))
     temperature: float = field(default_factory=lambda: float(os.getenv('TEMPERATURE', '0.3')))
     pr_title: str = field(default_factory=lambda: os.getenv('PR_TITLE', 'Add LLM Translations V3'))
-    batch_size_per_commit: int = field(default_factory=lambda: int(os.getenv('BATCH_SIZE_PER_COMMIT', os.getenv('BATCH_SIZE', '2'))))
-    
-    # Alias for backward compatibility
-    @property
-    def batch_size(self) -> int:
-        """Alias for batch_size_per_commit for backward compatibility"""
-        return self.batch_size_per_commit
     
     # Refinement settings
     refine_enabled: bool = field(default_factory=lambda: os.getenv('REFINE_ENABLED', 'true').lower() == 'true')
@@ -80,7 +73,6 @@ class Config:
         print(f"Input Files: {self.input_files}")
         print(f"Output Files: {self.output_files}")
         print(f"PR Title: {self.pr_title}")
-        print(f"Batch Size Per Commit: {self.batch_size_per_commit}")
         print(f"Refinement Enabled: {self.refine_enabled}")
         
         if self.refine_enabled:

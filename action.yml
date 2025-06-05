@@ -66,14 +66,7 @@ inputs:
     description: "Custom PR title (default: 'Add LLM Translations')"
     required: false
     default: "Add LLM Translations"
-  batch_size_per_commit:
-    description: "Number of files to process in each commit batch (default: 2)"
-    required: false
-    default: "2"
-  batch_size:
-    description: "[DEPRECATED: Use batch_size_per_commit instead] Number of files to process in each batch"
-    required: false
-    default: "20"
+
   github_token:
     description: "GitHub token for PR creation"
     required: false
@@ -98,6 +91,4 @@ runs:
     REFINE_TEMPERATURE: ${{ inputs.refine_temperature }}
     BASE_BRANCH: ${{ inputs.base_branch }}
     PR_TITLE: ${{ inputs.pr_title }}
-    BATCH_SIZE_PER_COMMIT: ${{ inputs.batch_size_per_commit }}
-    BATCH_SIZE: ${{ inputs.batch_size }}
     GITHUB_TOKEN: ${{ inputs.github_token }}

@@ -15,6 +15,18 @@ from src.file_processor import FileProcessor
 from src.git_operations import GitOperations
 
 
+def format_time(seconds):
+    """Format time in seconds to a human-readable string"""
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
+    elif minutes > 0:
+        return f"{int(minutes)}m {int(seconds)}s"
+    else:
+        return f"{seconds:.1f}s"
+
+
 class TranslationWorkflow:
     """Main class for handling the translation workflow"""
     
@@ -301,6 +313,9 @@ class TranslationWorkflow:
         For the first file, creates a draft PR.
         For subsequent files, updates the existing PR.
         For the final file, marks the PR as ready for review.
+        
+        Returns:
+            bool: True if file was committed successfully, False otherwise
         """
         print(f"\n📊 Git Operations - File {self.current_file_index}/{self.total_files}")
         print(f"  📁 Files to commit: {len(self.output_files)}")
@@ -426,6 +441,9 @@ class TranslationWorkflow:
             else:
                 print(f"   All files translated locally (no PR created)")
         print("="*60)
+        
+        # Return True if branch_name is not None (indicating successful commit)
+        return branch_name is not None
     
     def _generate_session_id(self) -> str:
         """Generate a short unique session ID for this translation run"""
@@ -470,11 +488,11 @@ class TranslationWorkflow:
             self.all_processed_files = []
             
             # Display session ID and start time
-            print(f"🆔 Translation session ID: {self.session_id}")
+            print(f"\n🆔 Translation session ID: {self.session_id}")
             print(f"🕒 Started at: {start_time_str}")
-            all_files_to_translate = []
             
             # Process input files from config
+            all_files_to_translate = []
             if self.config.input_files:
                 # Split input paths by comma if multiple paths are provided
                 input_paths = [p.strip() for p in self.config.input_files.split(',') if p.strip()]
@@ -487,94 +505,99 @@ class TranslationWorkflow:
             all_files_to_translate = list(dict.fromkeys(all_files_to_translate))
             
             if not all_files_to_translate:
-                print("❌ No files to translate. Check your input paths and file extensions.")
+                print("\n\u274c No files found to translate. Exiting.")
                 return False
                 
             print(f"\n📋 Found {len(all_files_to_translate)} files to translate")
             
-            # Set total number of files
+            # Group files by directory for better organization
+            self.directory_files_map = self._group_files_by_directory(all_files_to_translate)
+            
+            # Set total files count
             self.total_files = len(all_files_to_translate)
+            
+            # Create a branch for all files in this session
             print(f"\n🔄 Using file-by-file workflow: Will create one draft PR and update it with each file")
             
-            # Create branch for PR at the beginning
+            # Create a branch for this translation session
             self.pr_branch_name = f"translation-{self.session_id}"
             print(f"\n🌱 Creating branch: {self.pr_branch_name}")
+            self.git_ops.setup_git()
             
-            # Setup git configuration at the beginning
-            if not self.git_ops.setup_git():
-                print("  ⚠️ Git setup failed, but continuing with local file operations")
+            # Track if any files were actually committed
+            any_files_committed = False
             
-            # Process each file individually
-            for file_index, file_path in enumerate(all_files_to_translate):
-                # Reset tracking for this file
-                self.current_file_index = file_index + 1  # 1-based index for display
+            # Process each file
+            for i, file_path in enumerate(all_files_to_translate, 1):
+                self.current_file_index = i
                 self.processed_files = []
                 self.output_files = []
                 
-                file_start_time = time.time()  # Store file start time for progress tracking
-                file_start_str = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"\n📄 Processing file {self.current_file_index}/{self.total_files} ({(self.current_file_index/self.total_files*100):.1f}%)")
+                # Print progress information
+                print(f"\n📄 Processing file {i}/{self.total_files} ({i/self.total_files*100:.1f}%)")
                 print(f"  🔄 File: {file_path}")
-                print(f"  ⏱️ Started at: {file_start_str}")
+                print(f"  \u23f1\ufe0f Started at: {datetime.datetime.now().strftime('%H:%M:%S')}")
                 
-                # Calculate and display estimated time remaining
-                if file_index > 0:
-                    elapsed_time = time.time() - workflow_start_time
-                    avg_time_per_file = elapsed_time / file_index
-                    remaining_files = len(all_files_to_translate) - file_index
+                # Calculate and display elapsed time and estimated remaining time
+                if i > 1:
+                    elapsed_seconds = time.time() - self.workflow_start_time
+                    avg_time_per_file = elapsed_seconds / (i - 1)
+                    remaining_files = self.total_files - (i - 1)
                     estimated_remaining = avg_time_per_file * remaining_files
                     
-                    # Format estimated remaining time
-                    minutes, seconds = divmod(estimated_remaining, 60)
-                    hours, minutes = divmod(minutes, 60)
-                    if hours > 0:
-                        time_str = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
-                    elif minutes > 0:
-                        time_str = f"{int(minutes)}m {int(seconds)}s"
-                    else:
-                        time_str = f"{seconds:.1f}s"
-                    
-                    print(f"  ⏱️ Elapsed: {elapsed_time:.1f}s, Estimated remaining: {time_str}")
+                    print(f"  \u23f1\ufe0f Elapsed: {format_time(elapsed_seconds)}, Estimated remaining: {format_time(estimated_remaining)}")
                 
                 # Translate the file
                 self._translate_file(file_path)
                 
-                # If file was processed, handle git operations immediately
+                # Add to all processed files list
                 if self.processed_files:
-                    # Prepare commit message and PR title for this single file
-                    commit_message, translation_table, pr_title = self.prepare_commit_message([file_path])
-                    
-                    # Handle git operations for this file
-                    self.handle_git_operations(commit_message, translation_table, pr_title)
+                    self.all_processed_files.extend(self.processed_files)
+                
+                # Prepare commit message and PR title
+                commit_message, translation_table, pr_title = self.prepare_commit_message(self.processed_files)
+                
+                # Handle git operations for this file
+                commit_result = self.handle_git_operations(commit_message, translation_table, pr_title)
+                if commit_result:
+                    any_files_committed = True
+                
+                print(f"\n\u2705 File {i}/{self.total_files} completed. {'Moving to next file...' if i < self.total_files else 'All files processed!'}")
+                print("============================================================")
+            
+            # If this is the last file and we have a PR but no files were committed,
+            # still mark the PR as ready for review
+            if self.pr_number and not any_files_committed and self.current_file_index == self.total_files:
+                print(f"\n🏁 All files processed! Finalizing pull request #{self.pr_number}...")
+                
+                # Create a final PR title without [DRAFT] prefix
+                final_pr_title = self.config.pr_title
+                if final_pr_title.startswith("[DRAFT] "):
+                    final_pr_title = final_pr_title.replace("[DRAFT] ", "")
+                print(f"  📋 Final PR title: {final_pr_title}")
+                
+                # Mark PR as ready for review
+                print(f"  🔄 Marking PR as ready for review...")
+                if self.git_ops.mark_pr_ready_for_review(self.pr_number):
+                    print(f"  \u2705 Pull request #{self.pr_number} marked as ready for review")
+                    print(f"  🔗 PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
                 else:
-                    print(f"\n⚠️ File {file_path} was not processed successfully")
+                    print(f"  \u26a0\ufe0f Failed to mark pull request #{self.pr_number} as ready for review")
+                    print(f"  \u2139\ufe0f You may need to manually mark the PR as ready for review at:")
+                    print(f"    {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
             
-            # Calculate and display overall workflow statistics
-            workflow_elapsed_time = time.time() - workflow_start_time
-            total_files_processed = len(self.all_processed_files)
-            
-            # Format time in a readable way
-            hours, remainder = divmod(workflow_elapsed_time, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            time_format = f"{int(hours)}h {int(minutes)}m {seconds:.2f}s" if hours > 0 else \
-                         f"{int(minutes)}m {seconds:.2f}s" if minutes > 0 else \
-                         f"{seconds:.2f}s"
-            
-            print(f"\n🌟 Translation workflow completed!")
-            print(f"  📊 Overall statistics:")
-            print(f"    - Total files processed: {total_files_processed}")
-            print(f"    - Total files attempted: {self.total_files}")
-            print(f"    - Success rate: {(total_files_processed/self.total_files*100):.1f}% ({total_files_processed}/{self.total_files})")
-            print(f"    - Total time: {time_format}")
-            if total_files_processed > 0:
-                print(f"    - Average time per file: {workflow_elapsed_time / total_files_processed:.2f} seconds")
+            # Print final summary
+            total_elapsed_time = time.time() - self.workflow_start_time
+            print(f"\n🎉 Translation workflow completed!")
+            print(f"  \u23f1\ufe0f Total time: {format_time(total_elapsed_time)}")
+            print(f"  📊 Files processed: {self.total_files}")
+            print(f"  📊 Files successfully translated: {len(self.all_processed_files)}")
             
             if self.pr_number:
-                print(f"  🔗 Pull request: #{self.pr_number} (now ready for review)")
-            
-            end_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"  🕒 Finished at: {end_time_str}")
-            
+                print(f"  🔗 PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
+            else:
+                print(f"  \u2139\ufe0f No PR was created. This could be because no files needed translation or there was an issue with the Git operations.")
+                
             return True
             
         except Exception as e:

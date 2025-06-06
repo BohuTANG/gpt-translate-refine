@@ -327,8 +327,13 @@ class TranslationWorkflow:
         branch_name = self.git_ops.commit_and_push(self.output_files, commit_message, self.pr_branch_name)
         
         # If branch was created/updated and we have GitHub credentials
-        if branch_name:
-            if self.git_ops.github_token and self.git_ops.github_repository:
+        if self.git_ops.github_token and self.git_ops.github_repository:
+            # If branch_name is None but we're not on the first file, try to use the existing branch name
+            if not branch_name and self.current_file_index > 1 and self.pr_branch_name:
+                print(f"  ⚠️ Commit failed but continuing with existing branch: {self.pr_branch_name}")
+                branch_name = self.pr_branch_name
+                
+            if branch_name:
                 # Use provided PR title or default from config
                 if pr_title is None:
                     pr_title = self.config.pr_title.strip()
@@ -340,8 +345,8 @@ class TranslationWorkflow:
                 pr_body = commit_message.split('\n')
                 print(f"  📄 PR body contains {len(pr_body)} lines with translation details")
                 
-                # First file: create PR (draft if more than one file)
-                if self.current_file_index == 1:
+                # First file or no PR created yet: create PR (draft if more than one file)
+                if self.current_file_index == 1 or not self.pr_number:
                     # If this is the only file (current=1, total=1), create a regular PR
                     # Otherwise create a draft PR with [DRAFT] prefix
                     is_draft = self.total_files > 1

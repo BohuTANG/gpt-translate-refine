@@ -156,7 +156,7 @@ class TranslationWorkflow:
             traceback.print_exc()
             return False
     
-    def prepare_commit_message(self, is_last_file: bool) -> Tuple[str, str, str]:
+    def prepare_commit_message(self) -> Tuple[str, str, str]:
         """Prepare commit message and PR title"""
         # File info
         file_name = "unknown"
@@ -199,20 +199,17 @@ class TranslationWorkflow:
         # PR titles
         directory_name = os.path.basename(os.path.dirname(self.processed_files[0])) if self.processed_files else "files"
         base_pr_title = f"AI Translate {directory_name} to {self.config.target_lang}"
-
-        if self.total_files == 1: # Single file translation, never draft, no progress in title
-            api_pr_title = base_pr_title
-        elif is_last_file:
-            # For the last file of multiple, the API title for final update is the base_pr_title
-            api_pr_title = base_pr_title
-        else:
-            # Intermediate files in a multi-file translation
+        
+        # Always include progress in title for multi-file translations
+        if self.total_files > 1:
             api_pr_title = f"[DRAFT] {base_pr_title} ({self.current_file_index}/{self.total_files})"
+        else:
+            api_pr_title = base_pr_title
 
         # Note: commit_lines is not used by callers anymore, returning base_pr_title instead.
         return commit_message, base_pr_title, api_pr_title
     
-    def handle_git_operations(self, git_commit_subject: str, pr_body_content: str, base_pr_title: str, api_pr_title: str, is_last_file: bool) -> bool:
+    def handle_git_operations(self, git_commit_subject: str, pr_body_content: str, base_pr_title: str, api_pr_title: str) -> bool:
         """Handle git operations: commit, push and create/update PR"""
         print(f"\n📊 Git Operations - File {self.current_file_index}/{self.total_files}")
         print(f"  📁 Files to commit: {len(self.output_files)}")
@@ -228,11 +225,10 @@ class TranslationWorkflow:
         
         # Handle PR operations
         if self.git_ops.github_token and self.git_ops.github_repository:
-            if not self.pr_number: # No PR exists, try to create one
-                # Determine if PR should be draft based on api_pr_title or total_files
-                # For initial creation, draft status is primarily for multi-file scenarios.
-                create_as_draft = self.total_files > 1
-                print(f"🔄 Creating {'draft ' if create_as_draft else ''}pull request with title: '{api_pr_title}'...")
+            if not self.pr_number: # No PR exists, create one
+                # Always create as draft for the initial PR
+                create_as_draft = True
+                print(f"🔄 Creating empty draft pull request with initial title: '{api_pr_title}'...")
                 
                 self.pr_number = self.git_ops.create_pull_request(
                     branch_name, 
@@ -242,138 +238,147 @@ class TranslationWorkflow:
                 )
                 
                 if self.pr_number:
-                    print(f"✅ {'Draft p' if create_as_draft else 'P'}ull request #{self.pr_number} created")
+                    print(f"✅ Draft pull request #{self.pr_number} created successfully")
                     print(f"🔗 PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
                 else:
-                    print("⚠️ Failed to create pull request")
+                    print("⚠️ Failed to create draft pull request")
         
-            elif self.pr_number and not is_last_file:
-                # Update existing PR (intermediate file)
+            elif self.pr_number:
+                # Update existing PR with current progress
                 print(f"🔄 Updating pull request #{self.pr_number} with title: '{api_pr_title}' and current summary...")
                 if self.git_ops.update_pull_request(self.pr_number, title=api_pr_title, body=pr_body_content):
-                    print(f"✅ Pull request #{self.pr_number} updated")
+                    print(f"✅ Pull request #{self.pr_number} title and summary updated successfully")
                 else:
-                    print(f"⚠️ Failed to update pull request #{self.pr_number}")
-        
-            elif self.pr_number and is_last_file:
-                # Final file: Update PR title to base_pr_title (remove DRAFT), update body, then mark as ready
-                print(f"\n🏁 Final file processed. Finalizing pull request #{self.pr_number}...")
-                print(f"  🔄 Updating PR title to: '{base_pr_title}' and final summary...")
-                if self.git_ops.update_pull_request(self.pr_number, title=base_pr_title, body=pr_body_content):
-                    print(f"  ✅ Pull request #{self.pr_number} title and summary updated.")
-                    if self.git_ops.mark_pr_ready_for_review(self.pr_number):
-                        print(f"  ✅ Pull request #{self.pr_number} marked as ready for review.")
-                    else:
-                        print(f"  ⚠️ Failed to mark pull request #{self.pr_number} as ready for review.")
-                    print(f"  ⚠️ Failed to update pull request #{self.pr_number} for finalization.")
+                    print(f"⚠️ Failed to update pull request #{self.pr_number} title and summary")
         
         return True
     
     def run(self) -> bool:
         """Run the complete translation workflow"""
         try:
-            # Initialize
-            start_time_str = self.workflow_start_datetime.strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\n🆔 Translation session ID: {self.session_id}")
-            print(f"🕒 Started at: {start_time_str}")
-            
-            # Process input files
+            print(f"🚀 Starting translation workflow (Session ID: {self.session_id})")
+            print(f"   Workflow started at: {self.workflow_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   Input path(s): {self.config.input_files_or_paths}")
+            print(f"   Output path pattern: {self.config.output_path_pattern}")
+            print(f"   Target language: {self.config.target_language}")
+            print("-" * 60)
+
             all_files_to_translate = []
-            if self.config.input_files:
-                input_paths = [p.strip() for p in self.config.input_files.split(',') if p.strip()]
-                for input_path in input_paths:
-                    files = self.process_input_path(input_path)
-                    if files:
-                        all_files_to_translate.extend(files)
-            
-            # Remove duplicates
-            all_files_to_translate = list(dict.fromkeys(all_files_to_translate))
+            for input_path_item in self.config.input_files_or_paths:
+                processed_paths = self.process_input_path(input_path_item)
+                if processed_paths: # Ensure it's not None or empty
+                    all_files_to_translate.extend(processed_paths)
             
             if not all_files_to_translate:
-                print("\n❌ No files found to translate. Exiting.")
-                return False
-            
-            print(f"\n📋 Found {len(all_files_to_translate)} unique file(s) to translate after processing all input paths.")
+                print("🤷 No files found to translate. Exiting.")
+                return True
+
+            self.total_files = len(all_files_to_translate)
+            print(f"🔍 Found {self.total_files} file(s) to process.")
             for idx, f_path in enumerate(all_files_to_translate, 1):
                 print(f"    {idx}. {f_path}")
-            self.total_files = len(all_files_to_translate)
+
+            if self.config.create_pr: # Only prepare branch if PR creation is enabled
+                self.git_ops.setup_git() # Ensure git user is configured
+                self.pr_branch_name = self.git_ops.prepare_git_branch() # prepare_git_branch should handle session_id
+                if not self.pr_branch_name:
+                    print("❌ Failed to prepare Git branch. Aborting PR-related operations.")
+                    # If create_pr is true and branch fails, we stop.
+                    return False
             
-            # Setup branch
-            self.pr_branch_name = f"translation-{self.session_id}"
-            print(f"\n🌱 Creating branch: {self.pr_branch_name}")
-            self.git_ops.setup_git()
-            
-            # Process each file
             for i, file_path in enumerate(all_files_to_translate, 1):
                 self.current_file_index = i
-                self.processed_files = []
-                self.output_files = []
                 
                 print(f"\n📄 Processing file {i}/{self.total_files} ({i/self.total_files*100:.1f}%)")
                 print(f"  🔄 File: {file_path}")
+                file_start_time = time.time()
                 print(f"  ⏱️ Started at: {datetime.datetime.now().strftime('%H:%M:%S')}")
                 
-                # Show progress estimates
                 if i > 1:
-                    elapsed_seconds = time.time() - self.workflow_start_time
-                    avg_time_per_file = elapsed_seconds / (i - 1)
-                    remaining_files = self.total_files - (i - 1)
-                    estimated_remaining = avg_time_per_file * remaining_files
-                    print(f"  ⏱️ Elapsed: {format_time(elapsed_seconds)}, Estimated remaining: {format_time(estimated_remaining)}")
+                    elapsed_workflow_time = time.time() - self.workflow_start_time
+                    avg_time_per_file = elapsed_workflow_time / (i - 1)
+                    remaining_files_count = self.total_files - i 
+                    estimated_remaining_time = avg_time_per_file * remaining_files_count
+                    if estimated_remaining_time < 0: estimated_remaining_time = 0
+                    print(f"  ⏱️ Workflow elapsed: {format_time(elapsed_workflow_time)}, Approx. remaining: {format_time(estimated_remaining_time)}")
                 
-                # Translate file
-                is_last_file_in_list = (i == self.total_files)
-                if self.translate_file(file_path):
-                    # Prepare commit message and handle git operations
-                    commit_message_full_body, base_pr_title, api_pr_title = self.prepare_commit_message(is_last_file_in_list)
-                    
-                    # Extract subject for the actual git commit message
-                    git_commit_subject = commit_message_full_body.splitlines()[0] if commit_message_full_body else f"Translate {os.path.basename(file_path)}"
-                    
-                    self.handle_git_operations(
-                        git_commit_subject,         # For git commit -m
-                        commit_message_full_body,   # For PR body/summary
-                        base_pr_title, 
-                        api_pr_title, 
-                        is_last_file_in_list
-                    )
+                if self.translate_file(file_path): # This method logs its own success/failure
+                    if self.config.create_pr and self.pr_branch_name: # Only do git ops if PR is enabled AND branch is ready
+                        # Add information about next file or completion status
+                        next_file_info = ""
+                        if i < self.total_files:
+                            next_file = all_files_to_translate[i]  # i is already incremented for next iteration
+                            next_file_info = f"\n\n### 🔜 Next File\nProcessing: `{next_file}` ({i+1}/{self.total_files})"
+                        else:
+                            next_file_info = "\n\n### ✅ All Files Processed\nFinalizing PR and marking as ready for review..."
+                        
+                        commit_message_full_body, base_pr_title, api_pr_title = self.prepare_commit_message()
+                        # Add next file info to PR body
+                        commit_message_full_body += next_file_info
+                        
+                        git_commit_subject = commit_message_full_body.splitlines()[0] if commit_message_full_body else f"Translate {os.path.basename(file_path)}"
+                        
+                        self.handle_git_operations(
+                            git_commit_subject,
+                            commit_message_full_body,
+                            base_pr_title,
+                            api_pr_title
+                        )
+                    elif self.config.create_pr and not self.pr_branch_name:
+                        print("  ℹ️ PR creation is enabled, but Git branch was not prepared. Skipping Git operations for this file.")
+                    else: # PR creation is disabled
+                        print("  ℹ️ PR creation is disabled. Skipping Git operations for this file.")
+                else:
+                    print(f"  ⚠️ Translation failed or was skipped for {file_path}. See logs above.")
                 
-                print(f"\n✅ File {i}/{self.total_files} completed")
+                file_processing_time = time.time() - file_start_time
+                print(f"  ⏱️ Time for this file: {format_time(file_processing_time)}")
+                print(f"✅ File {i}/{self.total_files} processing completed for ({file_path})")
                 print("=" * 60)
+            # End of the for loop
+
+            total_workflow_time = time.time() - self.workflow_start_time
+            print(f"\n🎉 Translation workflow processing loop completed!")
+            print(f"  ⏱️ Total time for workflow: {format_time(total_workflow_time)}")
+            print(f"  📊 Files attempted: {self.total_files}")
+            # Consider adding a counter for successfully processed files if self.all_processed_files is used
+            # print(f"  📊 Files successfully resulting in output: {len(self.all_processed_files)}")
+
+            if self.config.create_pr and self.pr_number: # Finalize PR if one exists
+                # First update PR with final title (without DRAFT prefix)
+                print(f"\n🏁 Finalizing Pull Request #{self.pr_number} after all files processed...")
+                
+                # Get the final PR title and body
+                final_commit_message, final_pr_title, _ = self.prepare_commit_message()
+                # Remove [DRAFT] prefix from title for final update
+                if "[DRAFT]" in final_pr_title:
+                    final_pr_title = final_pr_title.replace("[DRAFT] ", "")
+                
+                print(f"  🔄 Updating PR #{self.pr_number} with final title: '{final_pr_title}'...")
+                if self.git_ops.update_pull_request(self.pr_number, title=final_pr_title, body=final_commit_message):
+                    print(f"  ✅ Pull request #{self.pr_number} title and summary updated with final version.")
+                else:
+                    print(f"  ⚠️ Failed to update pull request #{self.pr_number} with final title and summary.")
+                
+                # Now mark PR as ready for review
+                print(f"  🔄 Marking PR #{self.pr_number} as ready for review...")
+                if self.git_ops.mark_pr_ready_for_review(self.pr_number):
+                    print(f"  ✅ Pull request #{self.pr_number} successfully marked as ready for review.")
+                else:
+                    print(f"  ⚠️ Failed to mark pull request #{self.pr_number} as ready for review.")
+                print(f"  🔗 Final PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
+            elif self.config.create_pr and self.total_files > 0 and not self.pr_number:
+                 print("\nℹ️ PR creation was enabled, but no pull request was created or updated (perhaps no files had changes or an early error occurred, or branch setup failed).")
+            elif not self.config.create_pr and self.total_files > 0:
+                print("\nℹ️ PR creation was disabled for this workflow run. No PR operations performed.")
             
-            # Final summary
-            total_elapsed_time = time.time() - self.workflow_start_time
-            print(f"\n🎉 Translation workflow completed!")
-            print(f"  ⏱️ Total time: {format_time(total_elapsed_time)}")
-            print(f"  📊 Files processed: {self.total_files}")
-            print(f"  📊 Files successfully translated: {len(self.all_processed_files)}")
-            
-            if self.pr_number:
-                print(f"  🔗 PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
-            
+            print("\nWorkflow finished.")
             return True
             
         except Exception as e:
-            print(f"❌ Error in translation workflow: {e}")
+            print(f"❌ An unexpected error occurred in the translation workflow: {e}")
             traceback.print_exc()
             return False
-
-
-def main():
-    """Main entry point"""
-    try:
-        config = Config()
-        config.print_config()
-        
-        workflow = TranslationWorkflow(config)
-        success = workflow.run()
-        
-        if not success:
-            sys.exit(1)
-            
-    except Exception as e:
-        print(f"❌ Fatal error: {e}")
-        sys.exit(1)
 
 
 if __name__ == "__main__":

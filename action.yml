@@ -39,7 +39,7 @@ inputs:
   refine_enabled:
     description: "Enable second AI model for refinement after translation"
     required: false
-    default: "true"
+    default: "false"
   refine_ai_model:
     description: "AI model for refinement (uses the same service as primary translation but with a different model)"
     required: false

@@ -258,13 +258,15 @@ class TranslationWorkflow:
         try:
             print(f"🚀 Starting translation workflow (Session ID: {self.session_id})")
             print(f"   Workflow started at: {self.workflow_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"   Input path(s): {self.config.input_files_or_paths}")
-            print(f"   Output path pattern: {self.config.output_path_pattern}")
-            print(f"   Target language: {self.config.target_language}")
+            print(f"   Input path(s): {self.config.input_files}")
+            print(f"   Output path pattern: {self.config.output_files}")
+            print(f"   Target language: {self.config.target_lang}")
             print("-" * 60)
 
             all_files_to_translate = []
-            for input_path_item in self.config.input_files_or_paths:
+            # Handle input_files as a single path or comma-separated list
+            input_paths = [p.strip() for p in self.config.input_files.split(',') if p.strip()]
+            for input_path_item in input_paths:
                 processed_paths = self.process_input_path(input_path_item)
                 if processed_paths: # Ensure it's not None or empty
                     all_files_to_translate.extend(processed_paths)
@@ -278,7 +280,8 @@ class TranslationWorkflow:
             for idx, f_path in enumerate(all_files_to_translate, 1):
                 print(f"    {idx}. {f_path}")
 
-            if self.config.create_pr: # Only prepare branch if PR creation is enabled
+            # Check if PR creation is enabled via environment variable
+            if os.getenv('CREATE_PR', 'false').lower() == 'true': # Only prepare branch if PR creation is enabled
                 self.git_ops.setup_git() # Ensure git user is configured
                 self.pr_branch_name = self.git_ops.prepare_git_branch() # prepare_git_branch should handle session_id
                 if not self.pr_branch_name:
@@ -303,7 +306,7 @@ class TranslationWorkflow:
                     print(f"  ⏱️ Workflow elapsed: {format_time(elapsed_workflow_time)}, Approx. remaining: {format_time(estimated_remaining_time)}")
                 
                 if self.translate_file(file_path): # This method logs its own success/failure
-                    if self.config.create_pr and self.pr_branch_name: # Only do git ops if PR is enabled AND branch is ready
+                    if os.getenv('CREATE_PR', 'false').lower() == 'true' and self.pr_branch_name: # Only do git ops if PR is enabled AND branch is ready
                         # Add information about next file or completion status
                         next_file_info = ""
                         if i < self.total_files:
@@ -324,7 +327,7 @@ class TranslationWorkflow:
                             base_pr_title,
                             api_pr_title
                         )
-                    elif self.config.create_pr and not self.pr_branch_name:
+                    elif os.getenv('CREATE_PR', 'false').lower() == 'true' and not self.pr_branch_name:
                         print("  ℹ️ PR creation is enabled, but Git branch was not prepared. Skipping Git operations for this file.")
                     else: # PR creation is disabled
                         print("  ℹ️ PR creation is disabled. Skipping Git operations for this file.")
@@ -344,7 +347,7 @@ class TranslationWorkflow:
             # Consider adding a counter for successfully processed files if self.all_processed_files is used
             # print(f"  📊 Files successfully resulting in output: {len(self.all_processed_files)}")
 
-            if self.config.create_pr and self.pr_number: # Finalize PR if one exists
+            if os.getenv('CREATE_PR', 'false').lower() == 'true' and self.pr_number: # Finalize PR if one exists
                 # First update PR with final title (without DRAFT prefix)
                 print(f"\n🏁 Finalizing Pull Request #{self.pr_number} after all files processed...")
                 
@@ -367,9 +370,9 @@ class TranslationWorkflow:
                 else:
                     print(f"  ⚠️ Failed to mark pull request #{self.pr_number} as ready for review.")
                 print(f"  🔗 Final PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
-            elif self.config.create_pr and self.total_files > 0 and not self.pr_number:
+            elif os.getenv('CREATE_PR', 'false').lower() == 'true' and self.total_files > 0 and not self.pr_number:
                  print("\nℹ️ PR creation was enabled, but no pull request was created or updated (perhaps no files had changes or an early error occurred, or branch setup failed).")
-            elif not self.config.create_pr and self.total_files > 0:
+            elif not (os.getenv('CREATE_PR', 'false').lower() == 'true') and self.total_files > 0:
                 print("\nℹ️ PR creation was disabled for this workflow run. No PR operations performed.")
             
             print("\nWorkflow finished.")

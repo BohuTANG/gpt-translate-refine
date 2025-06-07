@@ -381,5 +381,22 @@ class TranslationWorkflow:
             return False
 
 
+def main():
+    """Main entry point"""
+    try:
+        config = Config()
+        config.print_config()
+        
+        workflow = TranslationWorkflow(config)
+        success = workflow.run()
+        
+        if not success:
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()

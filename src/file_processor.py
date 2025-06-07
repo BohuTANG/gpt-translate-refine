@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import re
 import yaml
 from pathlib import Path
@@ -19,12 +20,40 @@ class FileProcessor:
         if not self.config.input_files:
             return []
         
-        # Split by spaces and normalize paths (remove leading './')
-        return [
-            file_path[2:] if file_path.startswith('./') else file_path
-            for file_path in self.config.input_files.split()
-            if file_path.strip()
-        ]
+        # Handle the case where multiple paths are provided as a single string
+        input_files_str = self.config.input_files
+        
+        # First check if the entire string is a single path that exists
+        if os.path.exists(input_files_str):
+            return [input_files_str]
+        
+        # Otherwise, split by spaces and process each path
+        result = []
+        for path in input_files_str.split():
+            path = path.strip()
+            if not path:
+                continue
+                
+            # Remove leading './' if present
+            normalized_path = path[2:] if path.startswith('./') else path
+            
+            # Check if the normalized path exists
+            if os.path.exists(normalized_path):
+                result.append(normalized_path)
+            else:
+                # If normalized path doesn't exist, try the original path
+                if os.path.exists(path):
+                    result.append(path)
+                else:
+                    print(f"Warning: Path not found: {path}")
+        
+        if not result:
+            print(f"Error: Path not found: {input_files_str}")
+            print(f"Current working directory: {os.getcwd()}")
+            parent_dir = os.path.dirname(input_files_str.split()[0] if input_files_str.split() else '.')
+            print(f"Parent directory does not exist: {input_files_str}")
+            
+        return result
     
     def get_output_path(self, input_path: str) -> str:
         """Generate output path based on input path and output pattern"""

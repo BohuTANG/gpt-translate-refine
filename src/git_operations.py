@@ -85,6 +85,46 @@ class GitOperations:
             print(f"GitOps: Error setting up Git: {e}")
             return False
     
+    def prepare_git_branch(self, branch_name: Optional[str] = None) -> Optional[str]:
+        """Prepare Git branch for PR creation"""
+        if not self.in_github_actions:
+            # For local testing, we'll create a unique branch name
+            target_branch_name = branch_name or f"translation-{uuid.uuid4().hex[:8]}"
+            print(f"GitOps: Preparing branch: {target_branch_name} (local mode)")
+            return target_branch_name
+        
+        try:
+            # Set up Git configuration
+            if not self.setup_git():
+                print("Failed to set up Git configuration")
+                return None
+            
+            # Create a unique branch name if not provided
+            target_branch_name = branch_name or f"translation-{uuid.uuid4().hex[:8]}"
+            print(f"GitOps: Preparing branch: {target_branch_name}")
+            
+            # Check if branch exists
+            code, stdout, _ = self.run_command(['git', 'branch', '--list', target_branch_name])
+            if stdout.strip():
+                # Checkout existing branch
+                code, _, stderr = self.run_command(['git', 'checkout', target_branch_name])
+                if code != 0:
+                    print(f"Error checking out branch: {stderr}")
+                    return None
+                print(f"GitOps: Checked out existing branch: {target_branch_name}")
+            else:
+                # Create new branch
+                code, _, stderr = self.run_command(['git', 'checkout', '-b', target_branch_name])
+                if code != 0:
+                    print(f"Error creating branch: {stderr}")
+                    return None
+                print(f"GitOps: Created new branch: {target_branch_name}")
+            
+            return target_branch_name
+        except Exception as e:
+            print(f"GitOps: Error preparing branch: {e}")
+            return None
+    
     def commit_and_push(self, output_files: List[str], commit_message: str, 
                        branch_name: Optional[str] = None) -> Optional[str]:
         """Commit and push changes to branch"""

@@ -4,17 +4,18 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+
 
 @dataclass
 class Config:
     """Configuration management for translation workflow"""
-    # Required settings with default None for type hinting
-    api_key: str = field(default_factory=lambda: Config._get_required_env('API_KEY'))
-    input_files: str = field(default_factory=lambda: Config._get_required_env('INPUT_FILES'))
-    output_files: str = field(default_factory=lambda: Config._get_required_env('OUTPUT_FILES'))
     
-    # Optional settings with defaults
+    # Core settings
+    api_key: str = field(default_factory=lambda: Config._env_required('API_KEY'))
+    input_files: str = field(default_factory=lambda: Config._env_required('INPUT_FILES'))
+    output_files: str = field(default_factory=lambda: Config._env_required('OUTPUT_FILES'))
+    
+    # API settings
     base_url: str = field(default_factory=lambda: os.getenv('BASE_URL', 'https://openrouter.ai/api/v1'))
     ai_model: str = field(default_factory=lambda: os.getenv('AI_MODEL', 'gpt-4'))
     target_lang: str = field(default_factory=lambda: os.getenv('TARGET_LANG', 'Simplified-Chinese'))
@@ -33,13 +34,11 @@ class Config:
     refine_prompt: str = field(default_factory=lambda: Config._read_prompt('REFINE_PROMPT'))
     
     def __post_init__(self):
-        """Initialize fields that depend on other fields"""
         self.refine_ai_model = os.getenv('REFINE_AI_MODEL', self.ai_model)
         self.refine_temperature = float(os.getenv('REFINE_TEMPERATURE', str(self.temperature)))
     
     @staticmethod
-    def _get_required_env(name: str) -> str:
-        """Get a required environment variable or exit if not found"""
+    def _env_required(name: str) -> str:
         if not (value := os.getenv(name, '')):
             print(f'ERROR: {name} environment variable is required')
             sys.exit(1)
@@ -47,20 +46,13 @@ class Config:
     
     @staticmethod
     def _read_prompt(env_name: str) -> str:
-        """Read prompt from environment variable or file"""
         prompt_text = os.getenv(env_name, '')
-        prompt_path = Path(prompt_text)
-        
-        # If the prompt text is a valid file path, read from file
-        if prompt_path.is_file():
+        if Path(prompt_text).is_file():
             try:
-                return prompt_path.read_text(encoding='utf-8')
+                return Path(prompt_text).read_text(encoding='utf-8')
             except Exception as e:
                 print(f"Warning: Could not read prompt from file {prompt_text}: {e}")
-                return prompt_text
         return prompt_text
-    
-
     
     def print_config(self) -> None:
         """Print current configuration"""

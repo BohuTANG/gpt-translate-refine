@@ -9,6 +9,10 @@ import uuid
 from typing import List, Dict, Tuple
 from pathlib import Path
 
+# Version identifier - Update this when code changes
+VERSION = "1.4.5"
+BUILD_DATE = "2025-06-07"
+
 from src.config import Config
 from src.translator import Translator
 from src.file_processor import FileProcessor
@@ -255,15 +259,20 @@ class TranslationWorkflow:
     def run(self) -> bool:
         """Run the complete translation workflow"""
         try:
-            print(f"🚀 Starting translation workflow (Session ID: {self.session_id})")
-            print(f"   Workflow started at: {self.workflow_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            self.workflow_start_time = time.time()
+            self.workflow_start_datetime = datetime.datetime.now()
+            
+            # Display version information at the very beginning
+            print(f"\n🔎 Version: {VERSION} (Build: {BUILD_DATE})")
+            print(f"\n🚀 Starting translation workflow at {self.workflow_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   Session ID: {self.session_id}")
             print(f"   Input path(s): {self.config.input_files}")
             print(f"   Output path pattern: {self.config.output_files}")
             print(f"   Target language: {self.config.target_lang}")
             print("-" * 60)
 
             all_files_to_translate = []
-            # Handle input_files as a single path or comma-separated list
+            # Process input files from comma-separated list
             input_paths = [p.strip() for p in self.config.input_files.split(',') if p.strip()]
             for input_path_item in input_paths:
                 processed_paths = self.process_input_path(input_path_item)
@@ -288,7 +297,36 @@ class TranslationWorkflow:
                 # If branch preparation fails, we stop.
                 return False
                 
-            # Create an initial empty draft PR before processing any files
+            # Create an initial empty commit and push the branch before creating PR
+            print("\n📣 Preparing branch for PR creation...")
+            initial_commit_message = f"[INIT] Start translation to {self.config.target_lang}"
+            
+            # Create an empty commit to initialize the branch
+            try:
+                # Create .gitkeep file to ensure we have something to commit
+                gitkeep_path = os.path.join(os.getcwd(), ".translation-init")
+                with open(gitkeep_path, "w") as f:
+                    f.write(f"Translation initialization: {datetime.datetime.now().isoformat()}\n")
+                
+                # Add and commit the file
+                self.git_ops.run_command(["git", "add", ".translation-init"])
+                code, _, stderr = self.git_ops.run_command(["git", "commit", "-m", initial_commit_message])
+                if code != 0:
+                    print(f"⚠️ Initial commit failed: {stderr}")
+                
+                # Push the branch
+                print(f"🚀 Pushing branch '{self.pr_branch_name}' to remote...")
+                code, _, stderr = self.git_ops.run_command(["git", "push", "-u", "origin", self.pr_branch_name])
+                if code != 0:
+                    print(f"⚠️ Failed to push branch: {stderr}")
+                    # Continue anyway, as we'll try to create PR
+                else:
+                    print(f"✅ Branch '{self.pr_branch_name}' pushed successfully")
+            except Exception as e:
+                print(f"⚠️ Error preparing branch: {e}")
+                # Continue anyway as we'll try to create PR
+            
+            # Now create the initial draft PR
             print("\n📣 Creating initial draft PR...")
             initial_pr_title = f"[DRAFT] AI Translate to {self.config.target_lang} (0/{self.total_files})"
             initial_pr_body = f"# Translation in Progress\n\n* **Target Language:** {self.config.target_lang}\n* **Total Files:** {self.total_files}\n* **Status:** Starting translation...\n\n> This PR will be updated as files are processed."

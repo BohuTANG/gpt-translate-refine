@@ -250,7 +250,18 @@ class GitOperations:
         if not self.in_github_actions or not all([self.github_token, self.github_repository]):
             print("GitOps: Missing requirements for PR update (not in Actions, or missing token/repo).")
             return False
-        print(f"GitOps: Updating PR #{pr_number}...")
+        
+        update_details = []
+        if title is not None:
+            update_details.append(f"title to '{title}'")
+        if body is not None:
+            update_details.append("body/summary")
+        
+        if not update_details:
+            print(f"GitOps: No updates specified for PR #{pr_number}. Skipping.")
+            return True # No action needed, considered success
+        
+        print(f"GitOps: Updating PR #{pr_number}: setting {' and '.join(update_details)}...")
         
         try:
             owner, repo = self.github_repository.split('/')
@@ -269,13 +280,15 @@ class GitOperations:
             if data:
                 response = requests.patch(url, headers=headers, json=data)
                 if response.status_code in (200, 201):
-                    print(f"  GitOps: PR #{pr_number} updated successfully.")
+                    print(f"  GitOps: PR #{pr_number} API update successful.")
                     return True
                 else:
                     print(f"  GitOps: Failed to update PR #{pr_number}. Status: {response.status_code}, Response: {response.text[:200]}") # Truncate response
                     return False
-            
-            return True
+            else:
+                # This case should ideally not be reached if we check for empty data earlier
+                print(f"  GitOps: No data provided for PR #{pr_number} update.")
+                return True # No changes made, but not an error
         except Exception as e:
             print(f"GitOps: Error updating PR #{pr_number}: {e}")
             return False

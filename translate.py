@@ -156,7 +156,7 @@ class TranslationWorkflow:
             traceback.print_exc()
             return False
     
-    def prepare_commit_message(self) -> Tuple[str, List[str], str]:
+    def prepare_commit_message(self, is_last_file: bool) -> Tuple[str, str, str]:
         """Prepare commit message and PR title"""
         # File info
         file_name = "unknown"
@@ -196,62 +196,76 @@ class TranslationWorkflow:
         
         commit_message = "\n".join(commit_lines)
         
-        # PR title
+        # PR titles
         directory_name = os.path.basename(os.path.dirname(self.processed_files[0])) if self.processed_files else "files"
-        
-        if self.current_file_index < self.total_files:
-            pr_title = f"[DRAFT] AI Translate {directory_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
+        base_pr_title = f"AI Translate {directory_name} to {self.config.target_lang}"
+
+        if self.total_files == 1: # Single file translation, never draft, no progress in title
+            api_pr_title = base_pr_title
+        elif is_last_file:
+            # For the last file of multiple, the API title for final update is the base_pr_title
+            api_pr_title = base_pr_title
         else:
-            pr_title = f"AI Translate {directory_name} to {self.config.target_lang} ({self.current_file_index}/{self.total_files})"
-        
-        return commit_message, commit_lines, pr_title
+            # Intermediate files in a multi-file translation
+            api_pr_title = f"[DRAFT] {base_pr_title} ({self.current_file_index}/{self.total_files})"
+
+        # Note: commit_lines is not used by callers anymore, returning base_pr_title instead.
+        return commit_message, base_pr_title, api_pr_title
     
-    def handle_git_operations(self, commit_message: str, pr_title: str) -> bool:
+    def handle_git_operations(self, git_commit_subject: str, pr_body_content: str, base_pr_title: str, api_pr_title: str, is_last_file: bool) -> bool:
         """Handle git operations: commit, push and create/update PR"""
         print(f"\n📊 Git Operations - File {self.current_file_index}/{self.total_files}")
         print(f"  📁 Files to commit: {len(self.output_files)}")
         print(f"  🔄 Using branch: {self.pr_branch_name}")
         
         # Commit and push
-        print("📝 Committing translated file...")
-        branch_name = self.git_ops.commit_and_push(self.output_files, commit_message, self.pr_branch_name)
+        print(f"📝 Committing translated file with subject: '{git_commit_subject}'...")
+        branch_name = self.git_ops.commit_and_push(self.output_files, git_commit_subject, self.pr_branch_name)
         
         if not branch_name:
-            print("❌ Failed to commit changes")
-            return False
+            print("❌ Failed to commit changes or no changes found for this file.") # Clarified log
+            return False # No commit, so no PR update for this file's processing.
         
         # Handle PR operations
         if self.git_ops.github_token and self.git_ops.github_repository:
-            if self.current_file_index >= 1 or not self.pr_number:
-                # Create PR
-                is_draft = self.total_files > 1
-                print(f"🔄 Creating {'draft ' if is_draft else ''}pull request...")
+            if not self.pr_number: # No PR exists, try to create one
+                # Determine if PR should be draft based on api_pr_title or total_files
+                # For initial creation, draft status is primarily for multi-file scenarios.
+                create_as_draft = self.total_files > 1
+                print(f"🔄 Creating {'draft ' if create_as_draft else ''}pull request with title: '{api_pr_title}'...")
                 
                 self.pr_number = self.git_ops.create_pull_request(
-                    branch_name, pr_title, commit_message.split('\n'), draft=is_draft
+                    branch_name, 
+                    api_pr_title,  # Use api_pr_title which includes [DRAFT] if needed
+                    pr_body_content, # Body of the PR
+                    draft=create_as_draft
                 )
                 
                 if self.pr_number:
-                    print(f"✅ {'Draft p' if is_draft else 'P'}ull request #{self.pr_number} created")
+                    print(f"✅ {'Draft p' if create_as_draft else 'P'}ull request #{self.pr_number} created")
                     print(f"🔗 PR URL: {self.git_ops.github_server_url}/{self.git_ops.github_repository}/pull/{self.pr_number}")
                 else:
                     print("⚠️ Failed to create pull request")
-            
-            elif self.pr_number:
-                # Update existing PR
-                print(f"🔄 Updating pull request #{self.pr_number}...")
-                if self.git_ops.update_pull_request(self.pr_number, title=pr_title, body=commit_message):
+        
+            elif self.pr_number and not is_last_file:
+                # Update existing PR (intermediate file)
+                print(f"🔄 Updating pull request #{self.pr_number} with title: '{api_pr_title}' and current summary...")
+                if self.git_ops.update_pull_request(self.pr_number, title=api_pr_title, body=pr_body_content):
                     print(f"✅ Pull request #{self.pr_number} updated")
                 else:
                     print(f"⚠️ Failed to update pull request #{self.pr_number}")
-            
-            # Mark as ready for review if final file
-            if self.current_file_index == self.total_files and self.pr_number:
-                print(f"\n🏁 Final file completed! Finalizing pull request #{self.pr_number}...")
-                if self.git_ops.mark_pr_ready_for_review(self.pr_number):
-                    print(f"✅ Pull request #{self.pr_number} marked as ready for review")
-                else:
-                    print(f"⚠️ Failed to mark pull request #{self.pr_number} as ready for review")
+        
+            elif self.pr_number and is_last_file:
+                # Final file: Update PR title to base_pr_title (remove DRAFT), update body, then mark as ready
+                print(f"\n🏁 Final file processed. Finalizing pull request #{self.pr_number}...")
+                print(f"  🔄 Updating PR title to: '{base_pr_title}' and final summary...")
+                if self.git_ops.update_pull_request(self.pr_number, title=base_pr_title, body=pr_body_content):
+                    print(f"  ✅ Pull request #{self.pr_number} title and summary updated.")
+                    if self.git_ops.mark_pr_ready_for_review(self.pr_number):
+                        print(f"  ✅ Pull request #{self.pr_number} marked as ready for review.")
+                    else:
+                        print(f"  ⚠️ Failed to mark pull request #{self.pr_number} as ready for review.")
+                    print(f"  ⚠️ Failed to update pull request #{self.pr_number} for finalization.")
         
         return True
     
@@ -308,10 +322,21 @@ class TranslationWorkflow:
                     print(f"  ⏱️ Elapsed: {format_time(elapsed_seconds)}, Estimated remaining: {format_time(estimated_remaining)}")
                 
                 # Translate file
+                is_last_file_in_list = (i == self.total_files)
                 if self.translate_file(file_path):
                     # Prepare commit message and handle git operations
-                    commit_message, _, pr_title = self.prepare_commit_message()
-                    self.handle_git_operations(commit_message, pr_title)
+                    commit_message_full_body, base_pr_title, api_pr_title = self.prepare_commit_message(is_last_file_in_list)
+                    
+                    # Extract subject for the actual git commit message
+                    git_commit_subject = commit_message_full_body.splitlines()[0] if commit_message_full_body else f"Translate {os.path.basename(file_path)}"
+                    
+                    self.handle_git_operations(
+                        git_commit_subject,         # For git commit -m
+                        commit_message_full_body,   # For PR body/summary
+                        base_pr_title, 
+                        api_pr_title, 
+                        is_last_file_in_list
+                    )
                 
                 print(f"\n✅ File {i}/{self.total_files} completed")
                 print("=" * 60)

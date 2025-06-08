@@ -405,6 +405,7 @@ class TranslationWorkflow:
 
 def main():
     """Main entry point"""
+    print(f"🚀 Starting translation workflow v{VERSION} ({BUILD_DATE})...")
     print("🚀 [STEP 1: INITIALIZATION] Starting translation workflow...")
     try:
         config = Config()

@@ -64,38 +64,39 @@ class TranslationWorkflow:
         random_part = uuid.uuid4().hex[:3]
         return f"{timestamp}{random_part}"
     
-    def _resolve_input_path(self, path_str: str) -> Optional[str]:
-        """
-        Resolves a path, handling relative, absolute, and workspace-relative formats.
-        Returns a valid, existing absolute path or None.
-        """
-        # First, try the path as-is (handles standard relative and absolute paths)
-        if os.path.exists(path_str):
-            return os.path.abspath(path_str)
-
-        # If it's an absolute-style path that doesn't exist, it might be
-        # relative to the workspace root (common in CI/Docker environments).
-        if os.path.isabs(path_str):
-            workspace_path = os.path.join(os.getcwd(), path_str.lstrip('/\\'))
-            if os.path.exists(workspace_path):
-                print(f"  ⚠️  Path '{path_str}' not found, but resolved as workspace-relative.")
-                return workspace_path
-        
-        # If no valid path is found, return None
-        return None
-
     def process_input_path(self, input_path: str) -> List[str]:
-        """Process input path and return files to translate"""
-        print(f"  🔍 Resolving input path: '{input_path}'")
+        """
+        Process input path and return files to translate.
+        This method robustly handles various path formats (relative, absolute-style)
+        and always works with relative paths internally to ensure correct output mapping.
+        """
+        print(f"  🔍 Processing input path: '{input_path}'")
+
+        # Create a list of potential relative paths to check in order of priority
+        potential_paths = [
+            # 1. As-is (handles 'docs/...' and './docs/...')
+            input_path,
+            # 2. Without leading './'
+            input_path[2:] if input_path.startswith('./') else None,
+            # 3. As workspace-relative if it starts with '/'
+            input_path.lstrip('/\\') if input_path.startswith('/') else None
+        ]
         
-        resolved_path = self._resolve_input_path(input_path)
+        # Find the first valid, existing path from the potential list
+        resolved_path = None
+        for path in potential_paths:
+            if path is not None and os.path.exists(path):
+                resolved_path = path
+                break
         
         if not resolved_path:
             self._handle_missing_path(input_path)
             return []
 
-        print(f"  ✅ Path resolved to: '{resolved_path}'")
-        
+        # Log if the path was resolved to a different format
+        if resolved_path != input_path:
+            print(f"  ✅ Path resolved to: '{resolved_path}'")
+
         if os.path.isdir(resolved_path):
             print(f"  📁 Path is a directory. Searching for files recursively...")
             files = self.file_processor.find_files_recursively(resolved_path)
@@ -126,28 +127,28 @@ class TranslationWorkflow:
         """Translate a single file"""
         try:
             start_time = time.time()
-            print(f"\n📄 [STEP 4.{file_index}.1: FILE PROCESSING] Translating file: {file_path}")
 
-            if not os.path.exists(file_path):
-                print(f"  ❌ [STEP 4.{file_index}.1.1: FILE CHECK] Error: Source file not found: {file_path}")
-                return False
-            print(f"  ✅ [STEP 4.{file_index}.1.1: FILE CHECK] Source file exists: {file_path}")
-
-            # Read and translate
-            print(f"  📖 [STEP 4.{file_index}.1.2: FILE READING] Reading content from: {file_path}...")
-            content = self.file_processor.read_file(file_path)
-            if not content:
-                print(f"  ❌ [STEP 4.{file_index}.1.2: FILE READING] Error: Could not read file or file is empty: {file_path}")
-                return False
-            print(f"  📑 [STEP 4.{file_index}.1.2: FILE READING] Successfully read {len(content)} characters from: {file_path}")
-
-            print(f"  🛤️ [STEP 4.{file_index}.1.3: PATH RESOLUTION] Determining output path for: {file_path}...")
+            # Determine output path early for logging
             output_path = self.file_processor.get_output_path(file_path)
             if not output_path:
-                print(f"  ❌ [STEP 4.{file_index}.1.3: PATH RESOLUTION] Error: Could not determine output path for: {file_path}")
+                print(f"  ❌ [STEP 4.{file_index}.1.1: PATH RESOLUTION] Error: Could not determine output path for: {file_path}")
                 return False
 
-            print(f"  🎯 [STEP 4.{file_index}.1.3: PATH RESOLUTION] Determined output path: {output_path}")
+            print(f"\n📄 [STEP 4.{file_index}.1: FILE PROCESSING] Translating file: {file_path} -> {output_path}")
+
+            if not os.path.exists(file_path):
+                print(f"  ❌ [STEP 4.{file_index}.1.2: FILE CHECK] Error: Source file not found: {file_path}")
+                return False
+            print(f"  ✅ [STEP 4.{file_index}.1.2: FILE CHECK] Source file exists: {file_path}")
+
+            # Read and translate
+            print(f"  📖 [STEP 4.{file_index}.1.3: FILE READING] Reading content from: {file_path}...")
+            content = self.file_processor.read_file(file_path)
+            if not content:
+                print(f"  ❌ [STEP 4.{file_index}.1.3: FILE READING] Error: Could not read file or file is empty: {file_path}")
+                return False
+            print(f"  📑 [STEP 4.{file_index}.1.3: FILE READING] Successfully read {len(content)} characters from: {file_path}")
+
             print(f"\n🤖 [STEP 4.{file_index}.2: TRANSLATION] Translating with model: {self.config.ai_model}...")
 
             translated_content = self.translator.translate(content)

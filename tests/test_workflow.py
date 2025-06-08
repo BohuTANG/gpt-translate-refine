@@ -76,5 +76,42 @@ class TestTranslationWorkflow(unittest.TestCase):
                 # Assert that the recursive finder was called with the correct relative path
                 self.workflow.file_processor.find_files_recursively.assert_called_with('docs/en')
 
+    def test_process_input_path_empty_input(self):
+        """
+        Tests that process_input_path correctly handles empty input paths.
+        This is important for CI environments where no files may have changed.
+        """
+        # Test with empty string
+        result = self.workflow.process_input_path('')
+        self.assertEqual(result, [])
+        
+        # Test with None
+        result = self.workflow.process_input_path(None)
+        self.assertEqual(result, [])
+        
+        # Test with whitespace
+        result = self.workflow.process_input_path('   ')
+        self.assertEqual(result, [])
+    
+    def test_run_with_empty_input_files(self):
+        """
+        Tests that the run method handles empty input files gracefully.
+        """
+        # Set up the config with empty input_files
+        self.mock_config.input_files = ''
+        
+        # Mock process_input_path to return empty list
+        self.workflow.process_input_path = MagicMock(return_value=[])
+        
+        # Test non-CI environment
+        self.workflow.git_ops.in_github_actions = False
+        result = self.workflow.run()
+        self.assertTrue(result)  # Should return True for successful completion
+        
+        # Test CI environment
+        self.workflow.git_ops.in_github_actions = True
+        result = self.workflow.run()
+        self.assertTrue(result)  # Should return True for successful completion
+
 if __name__ == '__main__':
     unittest.main()

@@ -38,5 +38,27 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.target_lang, 'Simplified-Chinese')
             self.assertEqual(config.base_url, 'https://example.com/api/v1')
 
+    @patch.dict(os.environ, {
+        'API_KEY': 'test_key',
+        'INPUT_FILES': '',
+        'OUTPUT_FILES': './output/',
+        'TARGET_LANG': 'Simplified-Chinese',
+    })
+    def test_config_accepts_empty_input_files(self):
+        """
+        Tests that the Config class accepts empty INPUT_FILES environment variable.
+        This is important for CI environments where no files may have changed.
+        """
+        # We need to mock the prompts as they read from files
+        with patch('src.config.Config._read_prompt', return_value="dummy_prompt"):
+            config = Config()
+
+            # Assert that input_files is empty string but doesn't cause an error
+            self.assertEqual(config.input_files, '')
+            # Other required parameters should still be validated
+            self.assertEqual(config.api_key, 'test_key')
+            self.assertEqual(config.output_files, './output/')
+            self.assertEqual(config.target_lang, 'Simplified-Chinese')
+
 if __name__ == '__main__':
     unittest.main()

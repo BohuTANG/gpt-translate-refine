@@ -12,7 +12,7 @@ class Config:
     
     # Core settings
     api_key: str = field(default_factory=lambda: Config._env_required('API_KEY'))
-    input_files: str = field(default_factory=lambda: Config._env_required('INPUT_FILES'))
+    input_files: str = field(default_factory=lambda: Config._env_optional('INPUT_FILES', ''))
     output_files: str = field(default_factory=lambda: Config._env_required('OUTPUT_FILES'))
     
     # API settings
@@ -43,6 +43,10 @@ class Config:
             print(f'ERROR: {name} environment variable is required')
             sys.exit(1)
         return value.strip()
+        
+    @staticmethod
+    def _env_optional(name: str, default: str = '') -> str:
+        return os.getenv(name, default).strip()
     
     @staticmethod
     def _read_prompt(env_name: str) -> str:

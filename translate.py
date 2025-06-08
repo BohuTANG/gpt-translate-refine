@@ -70,6 +70,11 @@ class TranslationWorkflow:
         This method robustly handles various path formats (relative, absolute-style)
         and always works with relative paths internally to ensure correct output mapping.
         """
+        # Handle empty input path
+        if not input_path or input_path.strip() == '':
+            print("  ℹ️ Empty input path provided. No files to process.")
+            return []
+            
         print(f"  🔍 Processing input path: '{input_path}'")
 
         # Create a list of potential relative paths to check in order of priority
@@ -294,7 +299,14 @@ class TranslationWorkflow:
             self.total_files = len(all_files_to_translate)
 
             if self.total_files == 0:
-                print("✅ [STEP 2: FILE DISCOVERY] No files found to translate. Workflow finished.")
+                if self.git_ops.in_github_actions:
+                    print("✅ [STEP 2: FILE DISCOVERY] No files found to translate in CI environment. This is normal when no matching files were changed.")
+                    print("ℹ️ If you're using git diff to detect changed files, this may indicate no relevant files were modified in this commit.")
+                else:
+                    print("✅ [STEP 2: FILE DISCOVERY] No files found to translate. Please check your input path configuration.")
+                    print(f"ℹ️ Current input_files setting: '{self.config.input_files}'")
+                
+                print("🏁 Workflow finished successfully with no files to process.")
                 return True
 
             print(f"✅ [STEP 2: FILE DISCOVERY] Found {self.total_files} file(s) to process.")

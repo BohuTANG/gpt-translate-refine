@@ -6,13 +6,13 @@ import traceback
 import time
 import datetime
 import uuid
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 
 
 # Version identifier - Update this when code changes
 VERSION = "1.4.5"
-BUILD_DATE = "2025-06-07"
+BUILD_DATE = "2025-06-08:11:21"
 
 from src.config import Config
 from src.translator import Translator
@@ -64,25 +64,50 @@ class TranslationWorkflow:
         random_part = uuid.uuid4().hex[:3]
         return f"{timestamp}{random_part}"
     
+    def _resolve_input_path(self, path_str: str) -> Optional[str]:
+        """
+        Resolves a path, handling relative, absolute, and workspace-relative formats.
+        Returns a valid, existing absolute path or None.
+        """
+        # First, try the path as-is (handles standard relative and absolute paths)
+        if os.path.exists(path_str):
+            return os.path.abspath(path_str)
+
+        # If it's an absolute-style path that doesn't exist, it might be
+        # relative to the workspace root (common in CI/Docker environments).
+        if os.path.isabs(path_str):
+            workspace_path = os.path.join(os.getcwd(), path_str.lstrip('/\\'))
+            if os.path.exists(workspace_path):
+                print(f"  ⚠️  Path '{path_str}' not found, but resolved as workspace-relative.")
+                return workspace_path
+        
+        # If no valid path is found, return None
+        return None
+
     def process_input_path(self, input_path: str) -> List[str]:
         """Process input path and return files to translate"""
-        print(f"  🔍 Processing input path: {input_path}")
-        if not os.path.exists(input_path):
+        print(f"  🔍 Resolving input path: '{input_path}'")
+        
+        resolved_path = self._resolve_input_path(input_path)
+        
+        if not resolved_path:
             self._handle_missing_path(input_path)
             return []
+
+        print(f"  ✅ Path resolved to: '{resolved_path}'")
         
-        if os.path.isdir(input_path):
+        if os.path.isdir(resolved_path):
             print(f"  📁 Path is a directory. Searching for files recursively...")
-            files = self.file_processor.find_files_recursively(input_path)
+            files = self.file_processor.find_files_recursively(resolved_path)
             if not files:
-                print(f"  🟡 No files to translate in directory: {input_path}")
+                print(f"  🟡 No files to translate in directory: {resolved_path}")
             else:
-                print(f"  📂 Found {len(files)} file(s) in directory: {input_path}")
+                print(f"  📂 Found {len(files)} file(s) in directory: {resolved_path}")
             return files
         
-        print(f"  📄 Path is a single file: {input_path}")
+        print(f"  📄 Path is a single file: {resolved_path}")
         
-        return [input_path]
+        return [resolved_path]
     
     def _handle_missing_path(self, input_path: str) -> None:
         """Handle missing input path"""

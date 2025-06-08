@@ -16,14 +16,14 @@ class Config:
     output_files: str = field(default_factory=lambda: Config._env_required('OUTPUT_FILES'))
     
     # API settings
-    base_url: str = field(default_factory=lambda: os.getenv('BASE_URL', 'https://openrouter.ai/api/v1'))
-    ai_model: str = field(default_factory=lambda: os.getenv('AI_MODEL', 'gpt-4'))
-    target_lang: str = field(default_factory=lambda: os.getenv('TARGET_LANG', 'Simplified-Chinese'))
-    temperature: float = field(default_factory=lambda: float(os.getenv('TEMPERATURE', '0.3')))
-    pr_title: str = field(default_factory=lambda: os.getenv('PR_TITLE', 'Add LLM Translations V3'))
+    base_url: str = field(default_factory=lambda: os.getenv('BASE_URL', 'https://openrouter.ai/api/v1').strip())
+    ai_model: str = field(default_factory=lambda: os.getenv('AI_MODEL', 'gpt-4').strip())
+    target_lang: str = field(default_factory=lambda: os.getenv('TARGET_LANG', 'Simplified-Chinese').strip())
+    temperature: float = field(default_factory=lambda: float(os.getenv('TEMPERATURE', '0.3').strip()))
+    pr_title: str = field(default_factory=lambda: os.getenv('PR_TITLE', 'Add LLM Translations V3').strip())
     
     # Refinement settings
-    refine_enabled: bool = field(default_factory=lambda: os.getenv('REFINE_ENABLED', 'true').lower() == 'true')
+    refine_enabled: bool = field(default_factory=lambda: os.getenv('REFINE_ENABLED', 'true').strip().lower() == 'true')
     refine_ai_model: str = field(init=False)
     refine_temperature: float = field(init=False)
     
@@ -34,19 +34,19 @@ class Config:
     refine_prompt: str = field(default_factory=lambda: Config._read_prompt('REFINE_PROMPT'))
     
     def __post_init__(self):
-        self.refine_ai_model = os.getenv('REFINE_AI_MODEL', self.ai_model)
-        self.refine_temperature = float(os.getenv('REFINE_TEMPERATURE', str(self.temperature)))
+        self.refine_ai_model = os.getenv('REFINE_AI_MODEL', self.ai_model).strip()
+        self.refine_temperature = float(os.getenv('REFINE_TEMPERATURE', str(self.temperature)).strip())
     
     @staticmethod
     def _env_required(name: str) -> str:
         if not (value := os.getenv(name, '')):
             print(f'ERROR: {name} environment variable is required')
             sys.exit(1)
-        return value
+        return value.strip()
     
     @staticmethod
     def _read_prompt(env_name: str) -> str:
-        prompt_text = os.getenv(env_name, '')
+        prompt_text = os.getenv(env_name, '').strip()
         if Path(prompt_text).is_file():
             try:
                 return Path(prompt_text).read_text(encoding='utf-8')

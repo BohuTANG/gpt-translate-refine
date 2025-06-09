@@ -182,6 +182,70 @@ class TestFileProcessor(unittest.TestCase):
             with patch('os.listdir', return_value=[]):
                 result = self.file_processor.get_input_files()
                 self.assertEqual(result, [])
+                
+    def test_get_input_files_github_actions_issue(self):
+        """Test the specific issue occurring in GitHub Actions environment"""
+        # This is the exact format of input we're seeing in GitHub Actions
+        github_actions_input = "./docs/en/sql-reference/200-sql-functions/006-string-functions/char.md ./docs/en/sql-reference/200-sql-functions/006-string-functions/index.md"
+        self.mock_config.input_files = github_actions_input
+        
+        # First, test the error case - no files exist
+        with patch('os.path.exists', return_value=False):
+            with patch('os.getcwd', return_value='/github/workspace'):
+                with patch('os.listdir', return_value=['README.md', 'docs']):
+                    # This should return an empty list since no files exist
+                    result = self.file_processor.get_input_files()
+                    self.assertEqual(result, [])
+                    
+        # Now test the case where the entire string is mistakenly treated as one path
+        def mock_exists(path):
+            # Return True only for the entire string, simulating the bug
+            return path == github_actions_input
+            
+        with patch('os.path.exists', side_effect=mock_exists):
+            with patch('os.getcwd', return_value='/github/workspace'):
+                with patch('os.listdir', return_value=['README.md', 'docs']):
+                    # This should NOT return the entire string as one path
+                    result = self.file_processor.get_input_files()
+                    self.assertNotEqual(result, [github_actions_input])
+                    
+        # Test that paths are correctly split by spaces
+        def mock_exists_individual_paths(path):
+            # Return True for individual paths after splitting
+            valid_paths = [
+                "./docs/en/sql-reference/200-sql-functions/006-string-functions/char.md",
+                "docs/en/sql-reference/200-sql-functions/006-string-functions/char.md",
+                "./docs/en/sql-reference/200-sql-functions/006-string-functions/index.md",
+                "docs/en/sql-reference/200-sql-functions/006-string-functions/index.md"
+            ]
+            return path in valid_paths
+            
+        with patch('os.path.exists', side_effect=mock_exists_individual_paths):
+            with patch('os.getcwd', return_value='/github/workspace'):
+                with patch('os.listdir', return_value=['README.md', 'docs']):
+                    # This should return the two individual paths
+                    result = self.file_processor.get_input_files()
+                    self.assertEqual(len(result), 2)
+                    self.assertIn("docs/en/sql-reference/200-sql-functions/006-string-functions/char.md", result)
+                    self.assertIn("docs/en/sql-reference/200-sql-functions/006-string-functions/index.md", result)
+
+    def test_get_input_files_space_separator(self):
+        """Test that input_files with space separator is correctly parsed into multiple paths"""
+        # Set up a simple space-separated input string
+        self.mock_config.input_files = "path1.md path2.md"
+        
+        # Mock os.path.exists to return True for both paths
+        def mock_exists(path):
+            return path in ["path1.md", "path2.md"]
+        
+        with patch('os.path.exists', side_effect=mock_exists):
+            # Get the input files
+            result = self.file_processor.get_input_files()
+            
+            # Verify that both paths were correctly parsed
+            self.assertEqual(len(result), 2)
+            self.assertIn("path1.md", result)
+            self.assertIn("path2.md", result)
 
 if __name__ == '__main__':
     unittest.main()

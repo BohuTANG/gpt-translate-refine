@@ -11,8 +11,8 @@ from pathlib import Path
 
 
 # Version identifier - Update this when code changes
-VERSION = "1.4.5"
-BUILD_DATE = "2025-06-09:21:19"
+VERSION = "1.4.6"
+BUILD_DATE = "2025-06-09:13:33"
 
 from src.config import Config
 from src.translator import Translator

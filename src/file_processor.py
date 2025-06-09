@@ -14,32 +14,39 @@ class FileProcessor:
         self.config = config
     
     def get_input_files(self) -> List[str]:
-        """Parse and normalize input file paths"""
+        """Parse and normalize input file paths
+        
+        Always splits input by spaces and checks each path individually.
+        Normalizes paths by removing leading './' if present.
+        """
         if not self.config.input_files:
             return []
         
         input_str = self.config.input_files
+        print(f"Debug: Raw input files string: '{input_str}'")
         
-        # Skip single path check to always process as a list of paths
-        # This ensures space-separated paths are always handled properly
-        
-        # Multiple paths processing
-        result = []
-        # Debug information
-        print(f"Debug: Processing input files: '{input_str}'")
+        # Print current directory and contents for debugging
         print(f"Debug: Current working directory: {os.getcwd()}")
-        
-        # List directory contents to help diagnose issues
-        print("Debug: Directory contents:")
         try:
-            print("\n".join(f"  - {f}" for f in os.listdir(os.getcwd())))
-        except Exception as e:
-            print(f"  Error listing directory: {e}")
-            
-        for path in input_str.split():
-            if not (path := path.strip()):
-                continue
+            print("Debug: Root directory contents:")
+            for item in os.listdir(os.getcwd()):
+                print(f"  - {item}")
                 
+            # Check if docs directory exists
+            if os.path.exists('docs'):
+                print("\nDebug: Contents of 'docs' directory:")
+                for item in os.listdir('docs'):
+                    print(f"  - {item}")
+        except Exception as e:
+            print(f"Debug: Error listing directory: {e}")
+        
+        # Simply split by spaces - assume spaces are ALWAYS path separators
+        paths = [p.strip() for p in input_str.split() if p.strip()]
+        print(f"Debug: Split paths: {paths}")
+        
+        # Process each path
+        result = []
+        for path in paths:
             # Normalize path by removing leading './' if present
             normalized = path[2:] if path.startswith('./') else path
             
@@ -53,21 +60,29 @@ class FileProcessor:
                 print(f"Debug: Found original path: {path}")
                 result.append(path)
             else:
-                # Try listing parent directory contents to help diagnose
-                parent_dir = os.path.dirname(normalized) or '.'
+                # Path not found - add debug info
                 print(f"Warning: Path not found: {path}")
-                print(f"Debug: Contents of parent directory '{parent_dir}':")
-                try:
-                    if os.path.exists(parent_dir):
-                        print("\n".join(f"  - {f}" for f in os.listdir(parent_dir)))
+                
+                # Try to identify where the path breaks
+                parts = normalized.split('/')
+                existing_path = ""
+                for i, part in enumerate(parts):
+                    if i == 0:
+                        test_path = part
                     else:
-                        print(f"  Parent directory does not exist")
-                except Exception as e:
-                    print(f"  Error listing parent directory: {e}")
+                        test_path = f"{existing_path}/{part}"
+                    
+                    if os.path.exists(test_path):
+                        existing_path = test_path
+                    else:
+                        print(f"Debug: Path component not found: {part}")
+                        break
         
         if not result:
             print(f"Error: No valid paths found in: {input_str}")
             print(f"Current working directory: {os.getcwd()}")
+            print("\nTry using absolute paths or check that the files exist.")
+            print("If running in Docker, make sure to mount the correct directory.")
             
         return result
     

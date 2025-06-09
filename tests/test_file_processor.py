@@ -1,7 +1,9 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import sys
 import os
+import tempfile
+from pathlib import Path
 
 # Mock external dependencies to avoid ModuleNotFoundError
 sys.modules['openai'] = MagicMock()
@@ -20,6 +22,14 @@ class TestFileProcessor(unittest.TestCase):
         """Set up a mock config and FileProcessor instance for testing."""
         self.mock_config = MagicMock(spec=Config)
         self.file_processor = FileProcessor(self.mock_config)
+        
+        # Create a temporary directory for file-based tests
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_dir = Path(self.temp_dir.name)
+        
+    def tearDown(self):
+        """Clean up temporary files after tests."""
+        self.temp_dir.cleanup()
 
     def test_get_output_path_mirroring(self):
         """
@@ -56,6 +66,122 @@ class TestFileProcessor(unittest.TestCase):
         
         actual_output = self.file_processor.get_output_path(input_path)
         self.assertEqual(actual_output, expected_output)
+
+    def test_get_input_files_single_path(self):
+        """Test get_input_files with a single file path"""
+        # Create a test file
+        test_file = self.test_dir / "test_file.md"
+        test_file.touch()
+        
+        # Configure mock
+        self.mock_config.input_files = str(test_file)
+        
+        # Test with absolute path
+        with patch('os.path.exists', return_value=True):
+            result = self.file_processor.get_input_files()
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0], str(test_file))
+    
+    def test_get_input_files_multiple_paths(self):
+        """Test get_input_files with multiple space-separated paths"""
+        # Create test files
+        test_file1 = self.test_dir / "test_file1.md"
+        test_file2 = self.test_dir / "test_file2.md"
+        test_file1.touch()
+        test_file2.touch()
+        
+        # Configure mock with space-separated paths
+        self.mock_config.input_files = f"{test_file1} {test_file2}"
+        
+        # Mock os.path.exists to return True for our test files
+        def mock_exists(path):
+            return path in (str(test_file1), str(test_file2))
+        
+        with patch('os.path.exists', side_effect=mock_exists):
+            with patch('os.listdir', return_value=[]):
+                result = self.file_processor.get_input_files()
+                self.assertEqual(len(result), 2)
+                self.assertEqual(result[0], str(test_file1))
+                self.assertEqual(result[1], str(test_file2))
+    
+    def test_get_input_files_with_leading_dot_slash(self):
+        """Test get_input_files with paths that have leading './'"""
+        # Create test files
+        docs_dir = self.test_dir / "docs"
+        docs_dir.mkdir(exist_ok=True)
+        en_dir = docs_dir / "en"
+        en_dir.mkdir(exist_ok=True)
+        
+        test_file1 = en_dir / "file1.md"
+        test_file2 = en_dir / "file2.md"
+        test_file1.touch()
+        test_file2.touch()
+        
+        # Paths with leading './' as would come from git diff
+        path1_with_dot = f"./docs/en/file1.md"
+        path2_with_dot = f"./docs/en/file2.md"
+        
+        # Normalized paths (without './')
+        path1_normalized = "docs/en/file1.md"
+        path2_normalized = "docs/en/file2.md"
+        
+        # Configure mock with space-separated paths that have leading './'
+        self.mock_config.input_files = f"{path1_with_dot} {path2_with_dot}"
+        
+        # Mock exists to return True for normalized paths (without './')
+        def mock_exists(path):
+            return path in (path1_normalized, path2_normalized)
+        
+        with patch('os.path.exists', side_effect=mock_exists):
+            with patch('os.listdir', return_value=[]):
+                with patch('os.getcwd', return_value=str(self.test_dir)):
+                    result = self.file_processor.get_input_files()
+                    self.assertEqual(len(result), 2)
+                    self.assertEqual(result[0], path1_normalized)
+                    self.assertEqual(result[1], path2_normalized)
+    
+    def test_get_input_files_git_diff_output(self):
+        """Test get_input_files with output similar to git diff command"""
+        # Simulate output from: git diff --name-only | grep '.md$' | sed -e 's/^/.\/' | tr '\n' ' '
+        git_diff_output = "./docs/en/guide.md ./docs/en/index.md ./docs/en/reference/api.md"
+        
+        # Configure mock
+        self.mock_config.input_files = git_diff_output
+        
+        # Mock paths that would exist after normalization
+        normalized_paths = [
+            "docs/en/guide.md",
+            "docs/en/index.md",
+            "docs/en/reference/api.md"
+        ]
+        
+        def mock_exists(path):
+            return path in normalized_paths
+        
+        with patch('os.path.exists', side_effect=mock_exists):
+            with patch('os.listdir', return_value=[]):
+                result = self.file_processor.get_input_files()
+                self.assertEqual(len(result), 3)
+                self.assertEqual(result, normalized_paths)
+    
+    def test_get_input_files_empty_input(self):
+        """Test get_input_files with empty input"""
+        # Configure mock
+        self.mock_config.input_files = ""
+        
+        result = self.file_processor.get_input_files()
+        self.assertEqual(result, [])
+    
+    def test_get_input_files_no_valid_paths(self):
+        """Test get_input_files when no valid paths are found"""
+        # Configure mock with non-existent paths
+        self.mock_config.input_files = "non_existent1.md non_existent2.md"
+        
+        # Mock os.path.exists to always return False
+        with patch('os.path.exists', return_value=False):
+            with patch('os.listdir', return_value=[]):
+                result = self.file_processor.get_input_files()
+                self.assertEqual(result, [])
 
 if __name__ == '__main__':
     unittest.main()

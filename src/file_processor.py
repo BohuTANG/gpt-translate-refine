@@ -20,29 +20,54 @@ class FileProcessor:
         
         input_str = self.config.input_files
         
-        # Single path check
-        if os.path.exists(input_str):
-            return [input_str]
+        # Skip single path check to always process as a list of paths
+        # This ensures space-separated paths are always handled properly
         
         # Multiple paths processing
         result = []
+        # Debug information
+        print(f"Debug: Processing input files: '{input_str}'")
+        print(f"Debug: Current working directory: {os.getcwd()}")
+        
+        # List directory contents to help diagnose issues
+        print("Debug: Directory contents:")
+        try:
+            print("\n".join(f"  - {f}" for f in os.listdir(os.getcwd())))
+        except Exception as e:
+            print(f"  Error listing directory: {e}")
+            
         for path in input_str.split():
             if not (path := path.strip()):
                 continue
                 
-            # Normalize path
+            # Normalize path by removing leading './' if present
             normalized = path[2:] if path.startswith('./') else path
             
+            print(f"Debug: Checking path: '{path}' (normalized: '{normalized}')")
+            
+            # Try both original and normalized paths
             if os.path.exists(normalized):
+                print(f"Debug: Found normalized path: {normalized}")
                 result.append(normalized)
             elif os.path.exists(path):
+                print(f"Debug: Found original path: {path}")
                 result.append(path)
             else:
+                # Try listing parent directory contents to help diagnose
+                parent_dir = os.path.dirname(normalized) or '.'
                 print(f"Warning: Path not found: {path}")
+                print(f"Debug: Contents of parent directory '{parent_dir}':")
+                try:
+                    if os.path.exists(parent_dir):
+                        print("\n".join(f"  - {f}" for f in os.listdir(parent_dir)))
+                    else:
+                        print(f"  Parent directory does not exist")
+                except Exception as e:
+                    print(f"  Error listing parent directory: {e}")
         
         if not result:
             print(f"Error: No valid paths found in: {input_str}")
-            print(f"Current directory: {os.getcwd()}")
+            print(f"Current working directory: {os.getcwd()}")
             
         return result
     
